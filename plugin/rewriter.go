@@ -1,11 +1,16 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/maximhq/bifrost/core/schemas"
+
+	"github.com/athmabhiram/context-curator/plugin/store"
 )
 
 // sourceListHeader heads the appended system message that cites every kept
@@ -87,13 +92,54 @@ const lambdaMMR = 0.7
 // call from the active plugin config; stateless across requests.
 type pipeline struct {
 	cfg *Config
+	// store backs utility lookups; nil (tests, unconfigured sidecar) means
+	// every domain scores the prior 0.5.
+	store *store.Store
+	// utilities caches posterior means per domain for the request, so each
+	// domain hits SQLite at most once.
+	utilities map[string]float64
 }
 
 func newPipeline(cfg *Config) *pipeline {
 	if cfg == nil {
 		cfg = DefaultConfig()
 	}
-	return &pipeline{cfg: cfg}
+	return &pipeline{cfg: cfg, utilities: map[string]float64{}}
+}
+
+// utilityFor returns the cached posterior mean for a domain, loading it from
+// the store on first use. No store, an unknown domain, or a store error all
+// degrade to the prior 0.5; a denied domain scores 0.0.
+func (p *pipeline) utilityFor(domain string) float64 {
+	if cached, ok := p.utilities[domain]; ok {
+		return cached
+	}
+	if p.store == nil {
+		return 0.5
+	}
+	rep, err := p.store.GetReputation(context.Background(), domain)
+	if err != nil {
+		if p.utilities == nil {
+			p.utilities = map[string]float64{}
+		}
+		if errors.Is(err, store.ErrNotFound) {
+			p.utilities[domain] = 0.5
+		}
+		return 0.5
+	}
+	if rep.Denied {
+		if p.utilities == nil {
+			p.utilities = map[string]float64{}
+		}
+		p.utilities[domain] = 0.0
+		return 0.0
+	}
+	u := Utility(rep)
+	if p.utilities == nil {
+		p.utilities = map[string]float64{}
+	}
+	p.utilities[domain] = u
+	return u
 }
 
 // handle segments tool context, stamps provenance, enforces hard denies,
@@ -102,8 +148,8 @@ func newPipeline(cfg *Config) *pipeline {
 // is no per-attempt re-run and no fallback memo is needed. Annotate mode
 // records the decision without touching the request; block mode rejects the
 // request on a hard deny without touching it either.
-func (p *pipeline) handle(_ *schemas.BifrostContext, req *schemas.BifrostRequest) (*Decision, error) {
-	d := &Decision{Mode: p.cfg.Mode, Policy: "default"}
+func (p *pipeline) handle(ctx *schemas.BifrostContext, req *schemas.BifrostRequest) (*Decision, error) {
+	d := &Decision{Mode: string(p.cfg.Mode), Policy: "default"}
 	if req == nil || req.ChatRequest == nil {
 		return d, nil
 	}
@@ -118,8 +164,9 @@ func (p *pipeline) handle(_ *schemas.BifrostContext, req *schemas.BifrostRequest
 	query := lastUserText(req)
 	for i := range chunks {
 		chunks[i] = ExtractProvenance(chunks[i], now)
+		chunks[i].FreshnessClass = ClassifyChunk(chunks[i].Text)
 		chunks[i].Relevance = Relevance(query, chunks[i].Text)
-		chunks[i] = Score(chunks[i], ScoreInput{Now: now, FreshnessClass: chunks[i].FreshnessClass})
+		chunks[i] = Score(chunks[i], ScoreInput{Now: now, FreshnessClass: chunks[i].FreshnessClass, Utility: func(dom string) float64 { return p.utilityFor(dom) }})
 	}
 	policy := ResolvePolicy(p.cfg, "", "")
 	d.Policy = policy.Name
@@ -133,6 +180,7 @@ func (p *pipeline) handle(_ *schemas.BifrostContext, req *schemas.BifrostRequest
 		}
 	}
 	if len(dropped) > 0 && p.cfg.Mode == ModeBlock {
+		d.RequestID = uuid.NewString()
 		d.ChunksIn = len(chunks)
 		d.ChunksKept = len(live)
 		for _, c := range live {
@@ -145,8 +193,14 @@ func (p *pipeline) handle(_ *schemas.BifrostContext, req *schemas.BifrostRequest
 		if verr := d.Validate(); verr != nil {
 			return nil, verr
 		}
+		stashPending(ctx, *d, req)
 		return d, fmt.Errorf("context-curator: request blocked: %s", dropped[0].Reason)
 	}
+	// Stale refusal runs after the block gate so block mode still fires only
+	// on hard denies, and before clustering so a superseded chunk never
+	// becomes a cluster representative.
+	live, superseded := Supersede(live, now)
+	dropped = append(dropped, superseded...)
 	sets := clusterSets(live, p.cfg.Independence.NearDuplicateThreshold)
 	reps := make([]Chunk, 0, len(sets))
 	for _, members := range sets {
@@ -173,6 +227,7 @@ func (p *pipeline) handle(_ *schemas.BifrostContext, req *schemas.BifrostRequest
 			return nil, err
 		}
 	}
+	d.RequestID = uuid.NewString()
 	d.ChunksIn = len(chunks)
 	d.ChunksKept = len(kept)
 	for _, c := range kept {
@@ -185,6 +240,7 @@ func (p *pipeline) handle(_ *schemas.BifrostContext, req *schemas.BifrostRequest
 	if verr := d.Validate(); verr != nil {
 		return nil, verr
 	}
+	stashPending(ctx, *d, req)
 	return d, nil
 }
 

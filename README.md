@@ -176,6 +176,31 @@ budgeted, and logged by the gateway itself, with direct HTTP as the fallback.
 A Tavily outage degrades the decision to `annotate` and marks affected chunks
 `refresh_failed`. It never blocks a request.
 
+## Evaluation
+
+Fifty trap questions run twice — once through the plugin in `annotate` mode
+(pass-through) and once in `rewrite` mode — three repeats each, against a
+deterministic echo provider. Accuracy is per-question: 1 when the answer
+contains every required token and none of the banned ones.
+
+```bash
+./examples/run-stack.ps1                                   # curated :18080
+./examples/run-stack.ps1 -Mode annotate -Container cc-eval-raw `
+  -BifrostPort 18081 -SidecarPort 18091                   # raw baseline
+go run ./examples/eval > examples/eval/results.md
+```
+
+| | raw | curated |
+|---|---|---|
+| mean accuracy | 0.480 | **1.000** (+52pp) |
+| mean provider tokens | 416 | **366** (−12.0%) |
+| mean latency | 9 ms | 9 ms |
+
+Traps cover stale prices (`$39` refused, `$49` kept), denied domains,
+near-duplicate press releases (collapsed to one chunk), and version/law
+controls. See [`examples/eval/results.md`](examples/eval/results.md) for
+the full per-question table.
+
 ## Documentation
 
 | Document | Contents |

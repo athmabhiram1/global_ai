@@ -267,6 +267,26 @@ score = 0.35*relevance + 0.20*authority + 0.20*freshness
 
 Selection: greedy MMR, `lambda = 0.7`, under `max_context_tokens`, floor of one chunk per independent cluster when `min_sources` requires it.
 
+### Classification and stale supersession (`plugin/classify.go`)
+
+Tool context arrives with `FetchedAt = now`, so fetch age can never mark it
+stale. The only age signal a tool chunk carries is a year it declares in its
+own text, and the PRD requires chunks classified into price, version, law,
+static. `ClassifyChunk` assigns the class from content signals with fixed
+precedence price > version > law > static; `StatementYear` extracts the
+latest explicit four-digit year (release numbers like `3.2` never match);
+`StaleByStatement` marks a prior-calendar-year statement stale only in a
+sub-year class (static content never goes stale by year).
+
+`Supersede` refuses stale chunks with `ReasonStale`, but only where at least
+one fresh chunk of the same class is admitted: a lone witness is always kept
+(degradation, never a gap), and block mode still fires only on hard denies
+because supersession runs after the block gate. It runs before clustering so
+a superseded chunk never becomes a cluster representative. Live Tavily
+refresh (`Refresh`, §4 step 8) stays the path that can rehabilitate a stale
+chunk with a URL; supersession is what refuses it when no refresh is
+possible.
+
 **Determinism:** every tie breaks on content hash. No map iteration order anywhere in the decision path. Scores rounded to 6 decimals so golden tests are stable.
 
 ---

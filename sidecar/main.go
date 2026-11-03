@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/athmabhiram/context-curator/plugin/store"
 )
 
 func main() {
@@ -21,11 +23,38 @@ func main() {
 		os.Exit(probe(*check))
 	}
 
+	storePath := os.Getenv("CC_STORE_PATH")
+	if storePath == "" {
+		storePath = "/data/contextcurator.db"
+	}
+	policyPath := os.Getenv("CC_POLICY_PATH")
+	if policyPath == "" {
+		policyPath = "config/contextcurator.yaml"
+	}
+
+	var st *store.Store
+	if opened, err := store.Open(storePath); err != nil {
+		fmt.Fprintf(os.Stderr, "cc-sidecar: store unavailable (%v), serving without persistence\n", err)
+	} else {
+		st = opened
+		defer opened.Close()
+	}
+
+	policyJSON := ""
+	if raw, err := os.ReadFile(policyPath); err != nil {
+		fmt.Fprintf(os.Stderr, "cc-sidecar: policy unreadable (%v), /policy will 503\n", err)
+	} else {
+		policyJSON = string(raw)
+	}
+
+	api := NewServer(st, os.Getenv("CC_ADMIN_TOKEN"), policyJSON)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"status":"ok","service":"cc-sidecar"}`)
 	})
+	mux.Handle("/api/", api.Handler())
 
 	srv := &http.Server{
 		Addr:              *addr,

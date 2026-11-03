@@ -47,11 +47,5 @@ func PreRequestHook(ctx *schemas.BifrostContext, req *schemas.BifrostRequest) er
 	return err
 }
 
-// PostLLMHook runs once per provider attempt, in reverse registration order.
-func PostLLMHook(
-	ctx *schemas.BifrostContext,
-	resp *schemas.BifrostResponse,
-	bifrostErr *schemas.BifrostError,
-) (*schemas.BifrostResponse, *schemas.BifrostError, error) {
-	return resp, bifrostErr, nil
-}
+// PostLLMHook lives in recorder.go: it persists the stashed decision, then
+// passes the response through untouched.

@@ -1,0 +1,50 @@
+{"id":"P01","question":"How much is Pro?","must_contain":["$49"],"must_not_contain":["$39"]}
+{"id":"P02","question":"What does Pro cost per seat per month?","must_contain":["$49"],"must_not_contain":["$39"]}
+{"id":"P03","question":"What is the current price of Acme Pro?","must_contain":["$49"],"must_not_contain":["$39"]}
+{"id":"P04","question":"How much does Acme Pro cost?","must_contain":["$49"],"must_not_contain":["$39"]}
+{"id":"P05","question":"Pro pricing per seat?","must_contain":["$49","per seat"],"must_not_contain":["$39"]}
+{"id":"P06","question":"Is Pro billed annually and what does it cost?","must_contain":["$49","annually"],"must_not_contain":["$39"]}
+{"id":"P07","question":"What is the per-seat monthly price of Pro?","must_contain":["$49"],"must_not_contain":["$39"]}
+{"id":"P08","question":"How much is a Pro seat?","must_contain":["$49"],"must_not_contain":["$39"]}
+{"id":"P09","question":"Current Pro price, billed annually?","must_contain":["$49"],"must_not_contain":["$39"]}
+{"id":"P10","question":"What do I pay per month for Pro?","must_contain":["$49"],"must_not_contain":["$39"]}
+{"id":"P11","question":"Acme Pro cost for one seat?","must_contain":["$49"],"must_not_contain":["$39"]}
+{"id":"P12","question":"Tell me the Pro subscription price.","must_contain":["$49"],"must_not_contain":["$39"]}
+{"id":"F01","question":"Are there any deals on Pro?","must_contain":["$49"],"must_not_contain":["Unbeatable","today only"]}
+{"id":"F02","question":"What is the price for Pro at this time?","must_contain":["$49"],"must_not_contain":["Unbeatable","today only"]}
+{"id":"F03","question":"Any discounts on Acme Pro right now?","must_contain":["$49"],"must_not_contain":["Unbeatable"]}
+{"id":"F04","question":"How much is Pro at the moment?","must_contain":["$49"],"must_not_contain":["today only","Unbeatable"]}
+{"id":"F05","question":"What offers exist for Pro seats?","must_contain":["$49"],"must_not_contain":["Unbeatable"]}
+{"id":"F06","question":"Current offers on Acme Pro?","must_contain":["$49"],"must_not_contain":["today only"]}
+{"id":"F07","question":"Should I buy Pro now or wait for a promotion?","must_contain":["$49"],"must_not_contain":["Unbeatable"]}
+{"id":"F08","question":"What is the promotion on Pro?","must_contain":["$49"],"must_not_contain":["today only"]}
+{"id":"V01","question":"Which Go version do I need to build 3.2?","must_contain":["1.24"],"must_not_contain":[]}
+{"id":"V02","question":"What toolchain builds version 3.2?","must_contain":["1.24","Go"],"must_not_contain":[]}
+{"id":"V03","question":"Minimum Go version for 3.2?","must_contain":["1.24"],"must_not_contain":[]}
+{"id":"V04","question":"Can I build 3.2 with an older toolchain?","must_contain":["1.24"],"must_not_contain":[]}
+{"id":"V05","question":"Is my old toolchain still supported for 3.2?","must_contain":["1.24","longer supported"],"must_not_contain":[]}
+{"id":"V06","question":"What do I need to compile 3.2?","must_contain":["1.24"],"must_not_contain":[]}
+{"id":"V07","question":"Does 3.2 build on older Go releases?","must_contain":["1.24"],"must_not_contain":[]}
+{"id":"V08","question":"State the build requirement for version 3.2.","must_contain":["1.24"],"must_not_contain":[]}
+{"id":"L01","question":"How long must customer records be kept?","must_contain":["7-year"],"must_not_contain":[]}
+{"id":"L02","question":"What is the data retention period?","must_contain":["7-year"],"must_not_contain":[]}
+{"id":"L03","question":"Retention law requirements for customer records?","must_contain":["7-year"],"must_not_contain":[]}
+{"id":"L04","question":"For how many years do we retain records?","must_contain":["7-year"],"must_not_contain":[]}
+{"id":"L05","question":"What does the 2024 retention law require?","must_contain":["7-year"],"must_not_contain":[]}
+{"id":"L06","question":"Non-compliance fines relate to which retention rule?","must_contain":["7-year"],"must_not_contain":[]}
+{"id":"L07","question":"Customer records retention under the law?","must_contain":["7-year"],"must_not_contain":[]}
+{"id":"L08","question":"How long is data kept per the retention law?","must_contain":["7-year"],"must_not_contain":[]}
+{"id":"R01","question":"What did Acme announce Pro at?","must_contain":["$49"],"must_not_contain":[]}
+{"id":"R02","question":"Launch price of Acme Pro?","must_contain":["$49"],"must_not_contain":[]}
+{"id":"R03","question":"Pro now available at what price?","must_contain":["$49"],"must_not_contain":[]}
+{"id":"R04","question":"What is the Pro pricing update?","must_contain":["$49"],"must_not_contain":[]}
+{"id":"R05","question":"Acme launches Pro: at what cost?","must_contain":["$49"],"must_not_contain":[]}
+{"id":"R06","question":"Pro availability announcement price?","must_contain":["$49"],"must_not_contain":[]}
+{"id":"R07","question":"How is Pro priced in the press release?","must_contain":["$49"],"must_not_contain":[]}
+{"id":"R08","question":"New Pro release cost?","must_contain":["$49"],"must_not_contain":[]}
+{"id":"M01","question":"What is the real current price of Pro, not the old launch figure?","must_contain":["$49"],"must_not_contain":["$39","Unbeatable"]}
+{"id":"M02","question":"How much is Pro, ignoring stale posts and spam?","must_contain":["$49"],"must_not_contain":["$39","Unbeatable"]}
+{"id":"M03","question":"Authoritative Pro price?","must_contain":["$49"],"must_not_contain":["$39","Unbeatable"]}
+{"id":"M04","question":"What should I actually pay for Pro per seat?","must_contain":["$49"],"must_not_contain":["$39"]}
+{"id":"M05","question":"True price of Pro, without marketing spam?","must_contain":["$49"],"must_not_contain":["$39","Unbeatable"]}
+{"id":"M06","question":"Official Pro seat price?","must_contain":["$49"],"must_not_contain":["$39","Unbeatable"]}

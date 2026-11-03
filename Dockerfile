@@ -71,9 +71,14 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
       go build -buildmode=plugin -trimpath -o /out/contextcurator.so .
 
-WORKDIR /src/sidecar
-COPY sidecar/ ./
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+WORKDIR /src/repo
+COPY go.work ./
+COPY plugin/ ./plugin/
+COPY sidecar/ ./sidecar/
+COPY examples/eval/ ./examples/eval/
+WORKDIR /src/repo/sidecar
+RUN --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
       go build -trimpath -o /out/cc-sidecar .
 
 WORKDIR /src/mock-provider
