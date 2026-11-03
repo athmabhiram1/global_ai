@@ -1,0 +1,12 @@
+.git
+.github
+.superpowers
+docs
+web/node_modules
+web/dist
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/.env
+**/node_modules
+README.md

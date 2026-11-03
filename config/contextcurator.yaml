@@ -1,0 +1,36 @@
+# Context Curator policy (Task 0.1 scaffold). Field reference: docs/ARCHITECTURE.md §8.
+context_curator:
+  enabled: true
+  mode: annotate # annotate | block | rewrite
+  store_path: /data/contextcurator.db
+  budget:
+    max_context_tokens: 4000
+    max_chunks: 8
+    max_tavily_credits: 2
+  freshness:
+    default_max_age_hours: 168
+    classes:
+      price: 24
+      version: 720
+      law: 168
+      static: 8760
+  authority:
+    allow: ["*.gov", "*.edu", "docs.*", "github.com"]
+    deny: ["content-farm.example"]
+    require_primary_for: ["price"]
+  independence:
+    min_sources: 2
+    near_duplicate_threshold: 0.85
+  tavily:
+    transport_order: [relay, http]
+    relay_name: tavily
+    search_depth: basic
+    max_age_hours: 24
+    timeout_ms: 900
+  claims:
+    enabled: true
+    model: gpt-4o-mini
+    max_claims_per_request: 12
+  autopsy:
+    max_ablations: 5
+    cache_ttl_minutes: 60

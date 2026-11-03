@@ -1,0 +1,31 @@
+# build output
+/out/
+/tmp/
+/dist/
+*.so
+
+# go
+vendor/
+
+# node
+node_modules/
+web/dist/
+
+# data
+*.db
+*.db-shm
+*.db-wal
+/data/
+
+# env
+.env
+.env.local
+
+# editor / os
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# agent scratch
+.superpowers/

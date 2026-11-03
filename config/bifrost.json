@@ -1,0 +1,92 @@
+{
+  "providers": {
+    "openai": {
+      "keys": [
+        {
+          "name": "primary",
+          "value": "env.OPENAI_API_KEY",
+          "models": ["*"],
+          "weight": 1.0
+        }
+      ]
+    },
+    "mock": {
+      "keys": [
+        {
+          "name": "deterministic",
+          "value": "env.MOCK_API_KEY",
+          "models": ["*"],
+          "weight": 1.0
+        }
+      ],
+      "network_config": {
+        "base_url": "http://127.0.0.1:8099"
+      },
+      "custom_provider_config": {
+        "base_provider_type": "openai",
+        "allowed_requests": {
+          "chat_completion": true,
+          "chat_completion_stream": true
+        }
+      }
+    },
+    "broken": {
+      "keys": [
+        {
+          "name": "dead",
+          "value": "env.MOCK_API_KEY",
+          "models": ["*"],
+          "weight": 1.0
+        }
+      ],
+      "network_config": {
+        "base_url": "http://127.0.0.1:9/v1"
+      },
+      "custom_provider_config": {
+        "base_provider_type": "openai",
+        "allowed_requests": {
+          "chat_completion": true,
+          "chat_completion_stream": true
+        }
+      }
+    }
+  },
+  "plugins": [
+    { "name": "governance", "enabled": false },
+    { "name": "telemetry", "enabled": false },
+    { "name": "otel", "enabled": false },
+    { "name": "maxim", "enabled": false },
+    { "name": "prompts", "enabled": false },
+    { "name": "semanticcache", "enabled": false },
+    {
+      "name": "context-curator",
+      "enabled": true,
+      "path": "/plugins/contextcurator.so",
+      "placement": "pre_builtin",
+      "order": 10,
+      "config": {
+        "enabled": true,
+        "mode": "annotate",
+        "store_path": "/data/contextcurator.db"
+      }
+    }
+  ],
+  "relays": [
+    {
+      "name": "tavily",
+      "description": "Tavily search and extract, priced and budgeted by Bifrost",
+      "base_url": "https://api.tavily.com",
+      "auth": { "type": "bearer" },
+      "credential": { "value": "env.TAVILY_API_KEY" },
+      "usage": {
+        "cost_per_request": 0.001,
+        "units_path": "usage.credits",
+        "cost_per_unit": 0.008
+      },
+      "routes": [
+        { "method": "POST", "path": "/search" },
+        { "method": "POST", "path": "/extract" }
+      ]
+    }
+  ]
+}
