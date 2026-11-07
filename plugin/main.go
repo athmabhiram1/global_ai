@@ -35,7 +35,18 @@ func Cleanup() error { return nil }
 // request and observed by the provider call and by every fallback. Hook
 // errors are non-blocking: the core logs them and the request continues
 // uncurated, so admission can never break the gateway.
-func PreRequestHook(ctx *schemas.BifrostContext, req *schemas.BifrostRequest) error {
+func PreRequestHook(ctx *schemas.BifrostContext, req *schemas.BifrostRequest) (err error) {
+	defer func() {
+		// A panic here would take down the gateway worker; degrade instead.
+		if r := recover(); r != nil {
+			err = nil
+		}
+	}()
+	ctxHit := shouldBypass(ctx)
+	hashHit := shouldBypassHash(req)
+	if ctxHit || hashHit {
+		return nil
+	}
 	if spikeEnabled() {
 		spikeRewrite(req)
 		return nil
@@ -43,7 +54,7 @@ func PreRequestHook(ctx *schemas.BifrostContext, req *schemas.BifrostRequest) er
 	if activeConfig == nil {
 		return nil
 	}
-	_, err := newPipeline(activeConfig).handle(ctx, req)
+	_, err = newPipeline(activeConfig).handle(ctx, req)
 	return err
 }
 

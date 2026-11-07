@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -154,4 +155,57 @@ func (s *Server) handleClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeJSON(w, http.StatusOK, claim)
+}
+
+// handleClaimsScore scores per-claim freshness for arbitrary text without an
+// LLM: the text is split into sentence claims (capped at 12 per the policy
+// default), each claim is searched against Tavily, and freshness is the word
+// overlap with the top evidence. Results are cached per claim hash and also
+// served at GET /claims/{hash}.
+func (s *Server) handleClaimsScore(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Text string `json:"text"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		s.writeErr(w, http.StatusBadRequest, "invalid claims request")
+		return
+	}
+	claims := splitClaims(body.Text)
+	if len(claims) == 0 {
+		s.writeJSON(w, http.StatusOK, []Claim{})
+		return
+	}
+	ret := s.Retriever
+	if ret == nil {
+		ret = tavilyChainFromEnv()
+	}
+	if ret == nil {
+		s.writeErr(w, http.StatusServiceUnavailable, "tavily not configured")
+		return
+	}
+	scored, err := s.scoreClaimsCached(r.Context(), claims, ret)
+	if err != nil {
+		s.writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	s.writeJSON(w, http.StatusOK, scored)
+}
+
+// splitClaims cuts text into sentence claims on . ! ? boundaries. It is the
+// no-LLM fallback the scoring endpoint uses; the LLM extraction path
+// (ExtractClaims) stays for callers that configure a model.
+func splitClaims(text string) []string {
+	fields := strings.FieldsFunc(text, func(r rune) bool {
+		return r == '.' || r == '!' || r == '?'
+	})
+	out := make([]string, 0, len(fields))
+	for _, f := range fields {
+		if c := strings.TrimSpace(f); c != "" {
+			out = append(out, c)
+		}
+		if len(out) >= 12 {
+			break
+		}
+	}
+	return out
 }

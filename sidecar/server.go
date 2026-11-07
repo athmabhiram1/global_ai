@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/athmabhiram/context-curator/plugin/retriever"
 	"github.com/athmabhiram/context-curator/plugin/store"
 )
 
@@ -60,6 +61,9 @@ type Server struct {
 	Token      string
 	PolicyJSON string
 	Replayer   Replayer
+	// Retriever is the Tavily chain for claims scoring. Tests inject a stub;
+	// production falls back to tavilyChainFromEnv when nil (see claims.go).
+	Retriever retriever.Retriever
 
 	mu     sync.Mutex
 	claims map[string]Claim
@@ -84,6 +88,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/context-curator/feedback", s.requireAuth(s.handleFeedback))
 	mux.HandleFunc("POST /api/context-curator/autopsy", s.requireAuth(s.handleAutopsy))
 	mux.HandleFunc("GET /api/context-curator/claims/{hash}", s.requireAuth(s.handleClaim))
+	mux.HandleFunc("POST /api/context-curator/claims/score", s.requireAuth(s.handleClaimsScore))
 	return cors(mux)
 }
 

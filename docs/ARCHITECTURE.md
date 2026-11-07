@@ -21,15 +21,18 @@
 ```
 ┌─────────────────────────── one container ────────────────────────────┐
 │                                                                       │
-│  supervisord                                                          │
+│  tini → docker-entrypoint.sh                                        │
 │   ├── bifrost-http :8080          (dynamically linked, stock source)  │
 │   │     └── loads contextcurator.so via plugin.Open()                 │
 │   │           PreRequestHook → full admission pipeline               │
 │   │           PostLLMHook    → persist decision to SQLite             │
+│   │           HTTPTransportResponseHeadersHook → x-cc-decision-id     │
 │   │                                                                   │
 │   └── cc-sidecar :8090                                                │
-│         ├── /            built React UI (drawer + context page)       │
-│         └── /api/*       autopsy, reputation, feedback, policy        │
+│         ├── /            built React UI from /srv/web                 │
+│         │                (single-file console at /temp1.html)         │
+│         └── /api/*       autopsy, reputation, feedback, policy,       │
+│                          claims/score                                 │
 │                                                                       │
 │  shared volume: /data/contextcurator.db  (SQLite, WAL)                │
 └───────────────────────────────────────────────────────────────────────┘
@@ -464,6 +467,7 @@ Writer discipline: plugin writes `decisions` and `verdict_cache`; sidecar writes
 | `POST` | `/api/context-curator/reputation/reset` | Reset a domain or all |
 | `POST` | `/api/context-curator/feedback` | Record good/bad |
 | `POST` | `/api/context-curator/autopsy` | Counterfactual proof |
+| `POST` | `/api/context-curator/claims/score` | Per-claim freshness for text (sentence-split, Tavily evidence, cached) |
 | `GET` | `/api/context-curator/claims/:hash` | Per-claim freshness |
 
 Auth: a single `CC_ADMIN_TOKEN` env var, sent as `Authorization: Bearer`. The sidecar is never exposed publicly in the demo.

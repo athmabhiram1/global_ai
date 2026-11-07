@@ -1,4 +1,9 @@
 {
+  "client": {
+    "allow_direct_keys": true,
+    "enforce_auth_on_inference": false,
+    "log_retention_days": 7
+  },
   "providers": {
     "openai": {
       "keys": [
