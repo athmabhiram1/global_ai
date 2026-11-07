@@ -5,7 +5,34 @@ You need Docker only — no Go, Node, or WSL on the host. Every `go`
 invocation in this guide runs inside the pinned `golang:1.27.3-bookworm`
 container; the module cache volume `cc-gomod` keeps repeats fast.
 
-## 1. Build the image
+## 0. One command (the whole product)
+
+```powershell
+docker compose up -d --build
+```
+
+One Compose stack (`global-hackathon`), one container (`global-hackathon`),
+one start button in Docker Desktop. It builds the image (Bifrost +
+`contextcurator.so` + mock provider + sidecar + Next console UI) and starts
+it with the primary console on `localhost:3000`, Bifrost on `localhost:8080`
+(gateway) and the sidecar on `localhost:8090` (API + legacy fallback UI).
+Keys come from the environment or a `.env`
+file next to `docker-compose.yml` (`OPENAI_API_KEY`, `TAVILY_API_KEY`;
+both optional for the mock-only demo). The shared SQLite database and
+Bifrost config live on the `cc-data` volume at `/data` — see §8 before
+sharing the volume: decisions persist prompt and tool text.
+
+```powershell
+docker compose ps      # one service, healthy
+docker compose logs -f # all four processes
+docker compose down    # clean stop (< 5 s)
+```
+
+Docker Desktop groups the stack under `global-hackathon` (Compose project
+names are lowercase by rule). Share the repo and anyone runs the same
+command; the published-image variant is Task 4.2.
+
+## 1. Build the image (without Compose)
 
 ```powershell
 docker build -t context-curator:wave3 .
@@ -90,7 +117,7 @@ mock provider. Measured 2026-11-03 (`examples/eval/results.md`):
 |---|---|---|
 | mean accuracy | 0.480 | **1.000** (+52pp) |
 | mean provider tokens | 416 | **366** (−12.0%) |
-| mean latency | 9 ms | 9 ms |
+| mean latency | 8 ms | 8 ms |
 
 Accuracy is 1 per question when the echoed answer contains every
 `must_contain` token and none of the `must_not_contain` tokens. The mock
@@ -121,7 +148,12 @@ Policy is the plugin's `config` block in `config/bifrost.json`
 
 ## 7. Serve the console
 
-Open `web/template.html` directly in a browser — no build step. The sidecar
+The primary console is the Next.js app: in Docker it runs on
+`http://localhost:3000` and proxies same-origin `/api/cc/*` to the sidecar,
+injecting `CC_ADMIN_TOKEN` server-side (the token never reaches the browser).
+The sidecar on `:8090` keeps serving the legacy static fallback (`/srv/web`).
+
+Legacy static console: open `web/template.html` directly in a browser — no build step. The sidecar
 ships permissive CORS, so a `file://` page can call the API.
 
 Two query params control the data source:
@@ -136,6 +168,56 @@ The deny/mode controls in the policy panel are local-only: they restyle the
 console and steer newly simulated rows, but the gateway keeps enforcing the
 policy baked into the container's `config.json` until you rerun
 `run-stack.ps1` (section 2) with a new `-Mode`.
+
+## 8. Deploy elsewhere
+
+### Self-hosted Docker (single host)
+
+Any single host with Docker works — one container, one persistent volume:
+
+```bash
+docker build -t context-curator:dev .
+docker run -d --name context-curator --restart unless-stopped \
+  -p 3000:3000 -p 8080:8080 -p 8090:8090 \
+  -e OPENAI_API_KEY=sk-... -e TAVILY_API_KEY=tvly-... \
+  -e CC_ADMIN_TOKEN="$(openssl rand -hex 32)" \
+  -e CC_GATEWAY_TOKEN= \
+  -v cc-data:/data \
+  context-curator:dev
+```
+
+`/data` holds the shared SQLite database and Bifrost config
+(`/data/bifrost/config.json`, seeded on first run). **Data note:** decisions
+persist prompt and tool text — treat the volume as sensitive, back it up,
+and wipe it before sharing an image.
+
+### Render (Blueprint)
+
+`render.yaml` at the repo root provisions one Docker `web` service plus a
+persistent `cc-data` disk mounted at `/data`. Only `PORT` (3000, the Next
+console) is reachable from the internet; `:8080`/`:8090` are intra-host
+only. Set the `sync: false` env vars in the Render dashboard:
+
+- `CC_SIDECAR_URL` defaults to `http://127.0.0.1:8090` (same host).
+- `CC_ADMIN_TOKEN` — long random value; the Next server proxy injects it,
+  it never reaches the browser.
+- `CC_GATEWAY_TOKEN`, `OPENAI_API_KEY`, `TAVILY_API_KEY` as needed.
+
+### Vercel (console only)
+
+The Next console in `web/` deploys to Vercel as the UI tier; the sidecar
+stays on a host that can reach the shared SQLite database (self-hosted
+Docker or Render above).
+
+1. Import the repo, set **Root Directory** to `web`.
+2. Environment variables:
+   - `CC_SIDECAR_URL=https://<sidecar-host>` (the `:8090` host, HTTPS).
+   - `CC_ADMIN_TOKEN=<same token the sidecar expects>`.
+3. Deploy. Browser calls hit same-origin `/api/cc/*`, which forwards to
+   `CC_SIDECAR_URL` with the admin bearer injected server-side.
+
+The eval strip shown by the console (accuracy 0.480 → 1.000,
+tokens −12.0%, 8 ms) is sourced from `examples/eval/results.md`.
 
 ## Troubleshooting
 

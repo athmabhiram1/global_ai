@@ -1,0 +1,37 @@
+# Render Blueprint: one Docker host for the whole stack.
+#
+#   render blueprint launch render.yaml
+#
+# Single `web` service built from the repo Dockerfile: Next console (:3000,
+# the Render-routed PORT), Bifrost gateway (:8080) and cc-sidecar (:8090)
+# run as supervised processes inside the same host and talk to each other
+# over 127.0.0.1. Only PORT is reachable from the internet; :8080/:8090 are
+# intra-host only on Render.
+#
+# The persistent disk keeps the shared SQLite database and Bifrost config
+# across deploys. NOTE: decisions persist prompt/tool text — treat /data as
+# sensitive and back it up.
+services:
+  - type: web
+    name: context-curator
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    healthCheckPath: /
+    disk:
+      name: cc-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: CC_SIDECAR_URL
+        value: http://127.0.0.1:8090
+      - key: CC_ADMIN_TOKEN
+        sync: false
+      - key: CC_GATEWAY_TOKEN
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false

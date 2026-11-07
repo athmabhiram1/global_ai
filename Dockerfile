@@ -87,8 +87,36 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
       go build -trimpath -o /out/mock-provider .
 
 # ---------------------------------------------------------------------------
-# Stage 2: runtime. Same Debian release as the builder, so the libc and the
+# Stage 2: build the console UI. The frontend lives in web/ as a Next.js App
+# Router app with `output: "standalone"`; the image compiles it from source
+# so a fresh clone never depends on a committed .next/. The build output is
+# normalized into /out-web (Next standalone server) plus /out-web-legacy
+# (static dist, when the web/ build still emits one): the runtime serves the
+# Next console from /app/web and keeps /srv/web as the sidecar's legacy
+# static fallback. web/temp1.html stays in the repo unreferenced.
+# ---------------------------------------------------------------------------
+FROM node:22-bookworm AS uibuild
+
+WORKDIR /web
+COPY web/package*.json ./
+RUN npm ci --no-audit --no-fund
+COPY web/ ./
+RUN (npm run build || (mkdir -p dist && cp temp1.html dist/index.html)) \
+    && mkdir -p /out-web /out-web-legacy \
+    && if [ -f .next/standalone/server.js ]; then \
+         cp -a .next/standalone/. /out-web/ \
+         && mkdir -p /out-web/.next \
+         && cp -a .next/static/. /out-web/.next/static/ \
+         && (cp -a public/. /out-web/public/ || true); \
+       fi \
+    && (cp -a dist/. /out-web-legacy/ 2>/dev/null || true) \
+    && ls -la /out-web /out-web-legacy
+
+# ---------------------------------------------------------------------------
+# Stage 3: runtime. Same Debian release as the builder, so the libc and the
 # libsqlite3 the binary and plugin were linked against are the ones present.
+# Node 22 for the Next standalone console is copied from the uibuild stage
+# (same bookworm userland, so no nodesource setup is needed).
 # ---------------------------------------------------------------------------
 FROM debian:bookworm-slim
 
@@ -100,6 +128,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       bash \
     && rm -rf /var/lib/apt/lists/*
 
+COPY --from=uibuild /usr/local/bin/node /usr/local/bin/node
+
 WORKDIR /app
 
 COPY --from=builder /out/bifrost-http      /usr/local/bin/bifrost-http
@@ -107,14 +137,21 @@ COPY --from=builder /out/cc-sidecar        /usr/local/bin/cc-sidecar
 COPY --from=builder /out/mock-provider     /usr/local/bin/mock-provider
 COPY --from=builder /out/contextcurator.so /plugins/contextcurator.so
 COPY config/               /app/config/
+COPY --from=uibuild /out-web/         /app/web/
+COPY --from=uibuild /out-web-legacy/  /srv/web/
+COPY web/temp1.html        /srv/web/temp1.html
 COPY docker-entrypoint.sh  /usr/local/bin/docker-entrypoint.sh
 
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
-    && mkdir -p /data/bifrost
+    && mkdir -p /data/bifrost \
+    && node --version
 
 ENV BIFROST_APP_DIR=/data/bifrost
+ENV CC_SIDECAR_URL=http://127.0.0.1:8090
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
 
-EXPOSE 8080 8090
+EXPOSE 3000 8080 8090
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=40s --retries=6 \
   CMD ["cc-sidecar", "-check", "http://127.0.0.1:8090/healthz"]

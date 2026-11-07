@@ -54,16 +54,26 @@ understood.*
 ## Quickstart
 
 ```bash
-docker run --rm -p 8080:8080 -p 8090:8090 \
+docker compose up -d --build
+```
+
+One Compose stack (`global-hackathon`), one container, one start button —
+Bifrost on `localhost:8080`, primary console (Next) on `localhost:3000`,
+sidecar API + legacy fallback UI on `localhost:8090`. Or the raw
+equivalent:
+
+```bash
+docker run --rm -p 3000:3000 -p 8080:8080 -p 8090:8090 \
   -e OPENAI_API_KEY=sk-... \
   -e TAVILY_API_KEY=tvly-... \
-  ghcr.io/athmabhiram/context-curator:latest
+  context-curator:dev
 ```
 
 | Port | What |
 |---|---|
+| `3000` | Context Curator console (Next, primary) |
 | `8080` | Bifrost gateway (OpenAI-compatible) with the plugin loaded |
-| `8090` | Context Curator UI and API |
+| `8090` | Context Curator sidecar API + legacy fallback UI |
 
 Point any OpenAI SDK at `http://localhost:8080/v1` and nothing else changes. The gateway
 curates the context on the way through.
@@ -81,7 +91,12 @@ curl http://localhost:8080/v1/chat/completions \
   }'
 ```
 
-Then open <http://localhost:8090> to see what was kept, what was dropped, and why.
+Then open <http://localhost:3000> to see what was kept, what was dropped, and why.
+(The sidecar on `:8090` keeps serving the legacy static fallback at `/temp1.html`.)
+
+> **Data note:** decisions persist prompt and tool text in the shared SQLite
+> database under `/data` (the `cc-data` volume). Treat the volume as
+> sensitive: back it up, restrict access, and wipe it before sharing an image.
 
 ## Build from source
 
@@ -91,7 +106,7 @@ Requires Docker only. Go and Node are not needed on the host.
 git clone https://github.com/athmabhiram/context-curator
 cd context-curator
 docker build -t context-curator:dev .
-docker run --rm -p 8080:8080 -p 8090:8090 \
+docker run --rm -p 3000:3000 -p 8080:8080 -p 8090:8090 \
   -e OPENAI_API_KEY=sk-... -e TAVILY_API_KEY=tvly-... \
   context-curator:dev
 ```
@@ -194,7 +209,7 @@ go run ./examples/eval > examples/eval/results.md
 |---|---|---|
 | mean accuracy | 0.480 | **1.000** (+52pp) |
 | mean provider tokens | 416 | **366** (−12.0%) |
-| mean latency | 9 ms | 9 ms |
+| mean latency | 8 ms | 8 ms |
 
 Traps cover stale prices (`$39` refused, `$49` kept), denied domains,
 near-duplicate press releases (collapsed to one chunk), and version/law
@@ -203,13 +218,17 @@ the full per-question table.
 
 ### Console
 
-Open [`web/template.html`](web/template.html) in a browser. It is live by
-default: it reads `?sidecar=` (default `http://localhost:8090`) and talks to
-the sidecar's documented API, falling back to built-in sim data with
-`?mock=1`. Our dev stacks publish the sidecar on `127.0.0.1:18090`, so use
-`?sidecar=http://127.0.0.1:18090`. The measured strip in the console matches
-`examples/eval/results.md`: accuracy 0.480 → 1.000, tokens −12.0%,
-9 ms latency.
+The primary console is the Next.js app: in Docker it runs on
+<http://localhost:3000> and proxies same-origin `/api/cc/*` to the sidecar,
+injecting `CC_ADMIN_TOKEN` server-side (the token never reaches the browser).
+The measured strip in the console matches `examples/eval/results.md`:
+accuracy 0.480 → 1.000, tokens −12.0%, 8 ms latency.
+
+Legacy fallback: [`web/template.html`](web/template.html) opened directly in a
+browser. It is live by default: it reads `?sidecar=` (default
+`http://localhost:8090`) and talks to the sidecar's documented API, falling
+back to built-in sim data with `?mock=1`. Our dev stacks publish the sidecar
+on `127.0.0.1:18090`, so use `?sidecar=http://127.0.0.1:18090`.
 
 ## Documentation
 
