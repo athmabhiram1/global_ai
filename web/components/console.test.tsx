@@ -3,7 +3,7 @@ import { describe, expect, it, vi, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { ChunkCard, DecisionDrawerView } from "./console/Drawer";
 import { AutopsyResultView } from "./console/Autopsy";
-import { ModeSeg } from "./console/Policy";
+import { ModeSeg, PolicyView } from "./console/Policy";
 import { SourcesTable } from "./console/Sources";
 import { api } from "../lib/api";
 import {
@@ -127,5 +127,33 @@ describe("Policy mode", () => {
     expect(onMode).toHaveBeenCalledWith("block");
     await api.setMode("block");
     expect(calls[0].url).toContain("/api/cc/api/context-curator/policy/mode");
+  });
+
+  it("kill list is the union of config deny + Denied rows (live)", () => {
+    render(
+      <PolicyView
+        mode="rewrite"
+        summary={{
+          effective_mode: "rewrite",
+          authority: { deny: ["content-farm.example"] },
+        }}
+        denied={["evil.example"]}
+        onMode={() => {}}
+      />,
+    );
+    const chips = screen.getByTestId("deny-chips");
+    expect(chips.textContent).toContain("content-farm.example");
+    expect(chips.textContent).toContain("evil.example");
+  });
+});
+
+describe("Autopsy cache honesty", () => {
+  it("cached results carry the 60-min TTL note", () => {
+    render(
+      <AutopsyResultView result={{ ...autopsyFixture, cached: true }} chunkId="c1" />,
+    );
+    expect(screen.getByLabelText("Autopsy result for c1").textContent).toContain(
+      "60 min",
+    );
   });
 });

@@ -33,7 +33,9 @@ export function AutopsyResultView({
     <div aria-label={`Autopsy result for ${chunkId}`}>
       <p className="mb-2">
         influence <span className="mono">{result.influence.toFixed(2)}</span>{" "}
-        {result.cached && <span className="chip">cached</span>}
+        {result.cached && (
+          <span className="chip">cached · 60 min TTL</span>
+        )}
       </p>
       {result.attribution && <p id="aut-attrib">{result.attribution}</p>}
       <p className="mb-2">

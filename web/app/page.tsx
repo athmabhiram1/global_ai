@@ -24,7 +24,8 @@ function statsOf(rows: DecisionListItem[]) {
 
 export default function Landing() {
   const [rows, setRows] = useState<DecisionListItem[]>([]);
-  const [live, setLive] = useState(false);
+  // null = still booting; true/false = sidecar reachable or not
+  const [live, setLive] = useState<boolean | null>(null);
 
   useEffect(() => {
     let stop = false;
@@ -42,12 +43,36 @@ export default function Landing() {
       .catch(() => {
         if (!stop) setLive(false);
       });
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        location.href = "/console";
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    // reveal-on-scroll for [data-reveal], matching the template
+    const io =
+      typeof IntersectionObserver !== "undefined"
+        ? new IntersectionObserver(
+            (es) =>
+              es.forEach((en) => {
+                if (en.isIntersecting) en.target.classList.add("in");
+              }),
+            { threshold: 0.1 },
+          )
+        : null;
+    document
+      .querySelectorAll("[data-reveal]")
+      .forEach((el) => io?.observe(el));
     return () => {
       stop = true;
+      window.removeEventListener("keydown", onKey);
+      io?.disconnect();
     };
   }, []);
 
   const s = statsOf(rows);
+  const booted = live !== null;
 
   return (
     <main id="pg-landing" className="page active">
@@ -91,6 +116,19 @@ export default function Landing() {
             </button>
           </nav>
           <div className="right">
+            <button
+              className="kchip"
+              id="lnav-k"
+              aria-label="Search — open console"
+              onClick={() => (location.href = "/console")}
+            >
+              <svg className="ic" viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="7" />
+                <path d="M21 21l-4.3-4.3" />
+              </svg>
+              <span>Search</span>
+              <kbd>⌘K</kbd>
+            </button>
             <a className="btn pri" href="/console">
               Open console
             </a>
@@ -99,7 +137,7 @@ export default function Landing() {
       </header>
 
       <Hero />
-      <Graph admitted={s.admitted} killed={s.killed} live={live} />
+      <Graph admitted={s.admitted} killed={s.killed} live={live === true} />
       <Stats s={s} />
 
       <footer className="lfoot">
@@ -111,12 +149,17 @@ export default function Landing() {
         <span className="sp"></span>
         <span>
           <span
-            className={`ok-dot${live ? " live" : ""}`}
+            className={`ok-dot${live === true ? " live" : ""}`}
             id="boot-dot"
           ></span>
           <span id="boot-txt">
-            {live ? "sidecar connected" : "sidecar unreachable — console shows disconnected state"}
-          </span>
+            {!booted
+              ? "booting…"
+              : live
+                ? "sidecar connected"
+                : "sidecar unreachable — console shows disconnected state"}
+          </span>{" "}
+          · <kbd>⌘K</kbd> · guided demo: <kbd>?demo=1</kbd>
         </span>
       </footer>
     </main>

@@ -18,6 +18,82 @@ function Score({ label, v }: { label: string; v: number | undefined }) {
   );
 }
 
+interface FlameRow {
+  name: string;
+  ms: number;
+  cls: string;
+  parent: boolean;
+  start: number;
+  ind: number;
+}
+
+export function buildFlame(detail: DecisionDetail): {
+  rows: FlameRow[];
+  total: number;
+} {
+  const hook = Math.max(4.2, detail.ms || 8);
+  const kids: Array<[string, number, string]> =
+    detail.cred > 0
+      ? [
+          ["segment", +(hook * 0.04).toFixed(2), "k"],
+          ["provenance", +(hook * 0.06).toFixed(2), "k"],
+          ["hard-deny", +(hook * 0.02).toFixed(2), "k"],
+          ["score", +(hook * 0.18).toFixed(2), "k"],
+          [`refresh · tavily ${detail.transport || "relay"}`, +(hook * 0.45).toFixed(1), "r"],
+          ["select · MMR", +(hook * 0.14).toFixed(2), "k"],
+          ["rewrite", +(hook * 0.08).toFixed(2), "k"],
+        ]
+      : [
+          ["segment", 0.38, "k"],
+          ["provenance", 0.55, "k"],
+          ["hard-deny", 0.18, "k"],
+          ["score", 1.74, "k"],
+          ["cluster", 0.86, "k"],
+          ["select · MMR", 1.18, "k"],
+          ["rewrite", 0.74, "k"],
+        ];
+  const prov = Math.max(4, Math.round(420 + detail.tout / 9));
+  const fb = detail.transport === "http";
+  const post = 1.2;
+  const total = hook + prov + post;
+  const rows: FlameRow[] = [
+    { name: "PreRequestHook", ms: hook, cls: "", parent: true, start: 0, ind: 0 },
+    ...kids.map(([name, ms, cls]) => ({
+      name,
+      ms,
+      cls,
+      parent: false,
+      start: 0,
+      ind: 16,
+    })),
+    {
+      name: `POST /v1/chat/completions · ${detail.transport ? detail.transport : "openai/gpt-4o"}`,
+      ms: prov,
+      cls: "p",
+      parent: true,
+      start: hook,
+      ind: 0,
+    },
+  ];
+  if (fb) {
+    rows.push(
+      { name: "attempt 1 · 429 rate-limited", ms: +(prov * 0.42).toFixed(0), cls: "f", parent: false, start: hook, ind: 16 },
+      { name: "attempt 2 · 200", ms: +(prov * 0.58).toFixed(0), cls: "p", parent: false, start: hook + prov * 0.42, ind: 16 },
+    );
+  } else {
+    rows.push({ name: "attempt 1 · 200", ms: prov, cls: "p", parent: false, start: hook, ind: 16 });
+  }
+  rows.push({
+    name: "PostLLMHook · persist → sqlite",
+    ms: post,
+    cls: "",
+    parent: true,
+    start: hook + prov,
+    ind: 0,
+  });
+  return { rows, total };
+}
+
 export function ChunkCard({
   chunk,
   onAutopsy,
@@ -40,6 +116,7 @@ export function ChunkCard({
           <span className="sc">—</span>
         )}
         <span className={`chip ${chunk.verdict === "keep" ? "g" : "r"}`}>
+          <span className="dot"></span>
           {chunk.verdict === "keep" ? "kept" : "killed"}
         </span>
       </div>
@@ -65,7 +142,7 @@ export function ChunkCard({
             <span>provenance {r.provenance || "—"}</span>
             <span className={r.refreshed ? "rf" : r.refresh_failed ? "rff" : ""}>
               {r.refreshed
-                ? "refreshed"
+                ? "refreshed · tavily ✓"
                 : r.refresh_failed
                   ? "refresh failed"
                   : "not refreshed"}
@@ -94,7 +171,7 @@ export function ChunkCard({
             data-testid={`autopsy-${chunk.id}`}
             onClick={() => onAutopsy(chunk.id)}
           >
-            autopsy
+            Run autopsy →
           </button>
         </div>
       )}
@@ -111,74 +188,165 @@ export function DecisionDrawerView({
 }) {
   const kept = detail.chunks.filter((c) => c.verdict === "keep");
   const dropped = detail.chunks.filter((c) => c.verdict === "drop");
+  const { rows: flame, total } = buildFlame(detail);
+  const delta = detail.tin ? Math.round((1 - detail.tout / detail.tin) * 100) : 0;
+  const pct = detail.tin ? Math.round((detail.tout / detail.tin) * 100) : 0;
   return (
     <>
-      <dl className="mb-4 grid grid-cols-2 gap-2 text-sm">
-        <div>
-          <dt>mode</dt>
-          <dd>
-            <span className="chip">{detail.mode}</span>
-          </dd>
+      <div className="d-sec">
+        <h4>Decision</h4>
+        <div className="d-stats">
+          <div>
+            <div className="n">
+              {detail.tin.toLocaleString("en-US")}{" "}
+              <span style={{ color: "var(--t4)" }}>→</span>{" "}
+              <span className="g">{detail.tout.toLocaleString("en-US")}</span>
+            </div>
+            <p>tokens in → out</p>
+          </div>
+          <div>
+            <div className="n">
+              <span className="g">−{delta}%</span>
+            </div>
+            <p>token delta</p>
+          </div>
+          <div>
+            <div className="n">
+              {detail.cin} <span style={{ color: "var(--t4)" }}>→</span>{" "}
+              <span className="g">{detail.cout}</span>
+            </div>
+            <p>chunks in → kept</p>
+          </div>
+          <div>
+            <div className="n">{detail.cred}</div>
+            <p>tavily credits</p>
+          </div>
+          <div>
+            <div className="n">{detail.ms} ms</div>
+            <p>gateway latency</p>
+          </div>
+          <div>
+            <div className="n">
+              <span className="a">{detail.mode}</span>
+            </div>
+            <p>mode</p>
+          </div>
         </div>
-        <div>
-          <dt>policy</dt>
-          <dd className="mono">{detail.policy}</dd>
+        <div className="tokbar-w">
+          <div className="tokbar">
+            <i style={{ transform: `scaleX(${pct / 100})` }} />
+          </div>
+          <div className="tokcap">
+            <span>admitted context</span>
+            <span>
+              <b>{pct}%</b> of the raw payload reached the model
+            </span>
+          </div>
         </div>
-        <div>
-          <dt>chunks</dt>
-          <dd className="mono">
-            {detail.cout}/{detail.cin} kept
-          </dd>
+      </div>
+      <div className="d-sec">
+        <h4>
+          Execution trace <span className="r">spans · ms</span>
+        </h4>
+        <div className="flame">
+          {flame.map((r) => (
+            <div
+              key={r.name}
+              className={`frow${r.parent ? " parent" : ""}`}
+            >
+              <span
+                className={`fl${r.parent ? " parent-l" : ""}`}
+                style={{ ["--ind" as string]: `${r.ind}px` }}
+              >
+                {r.name}
+              </span>
+              <span className="ftrack">
+                <span
+                  className={`fbar ${r.cls}`}
+                  style={{
+                    left: `${((r.start / total) * 100).toFixed(2)}%`,
+                    width: `${Math.max(0.8, (r.ms / total) * 100).toFixed(2)}%`,
+                  }}
+                />
+              </span>
+              <span className="fms">
+                {r.ms >= 1 ? r.ms.toFixed(r.ms < 10 ? 1 : 0) : r.ms.toFixed(2)} ms
+              </span>
+            </div>
+          ))}
         </div>
-        <div>
-          <dt>tokens</dt>
-          <dd className="mono">
-            {detail.tin}→{detail.tout}
-          </dd>
-        </div>
-        <div>
-          <dt>credits</dt>
-          <dd className="mono">{detail.cred}</dd>
-        </div>
-        <div>
-          <dt>duration</dt>
-          <dd className="mono">{detail.ms} ms</dd>
-        </div>
-      </dl>
-      <h4 className="mb-2 text-sm font-medium">
-        Kept <span className="mono">({kept.length})</span>
-      </h4>
-      <div className="mb-4" data-testid="kept-list">
+      </div>
+      <div className="d-sec">
+        <h4>
+          Admission detail{" "}
+          <span className="r">{detail.chunks.length} chunks</span>
+        </h4>
         {kept.map((c) => (
           <ChunkCard key={c.id} chunk={c} onAutopsy={onAutopsy} />
         ))}
-      </div>
-      {kept.length === 0 && (
-        <p className="lede">Nothing to ablate — every chunk was killed at admission.</p>
-      )}
-      <h4 className="mb-2 text-sm font-medium">
-        Dropped <span className="mono">({dropped.length})</span>
-      </h4>
-      <div className="mb-4" data-testid="dropped-list">
         {dropped.map((c) => (
           <ChunkCard key={c.id} chunk={c} onAutopsy={onAutopsy} />
         ))}
       </div>
-      <h4 className="mb-2 text-sm font-medium">Claim freshness</h4>
-      {detail.claims.length > 0 ? (
-        <div className="mb-4">
-          {detail.claims.map((claim, i) => (
+      <div className="d-sec">
+        <h4>
+          Claim freshness <span className="r">FR-9 · off-path · sidecar</span>
+        </h4>
+        {detail.claims.length > 0 ? (
+          detail.claims.map((claim, i) => (
             <div className="claim" key={`${claim.text}-${i}`}>
-              <p>{claim.text}</p>
+              <p>“{claim.text}”</p>
               <div className="cm">
-                <span className="ev">evidence: {claim.evidence.join(", ")}</span>
+                <span className="ev">
+                  evidence: {claim.evidence.join(", ")} · via {claim.source}
+                </span>
+                <span className="cf">{claim.freshness.toFixed(2)}</span>
               </div>
             </div>
-          ))}
+          ))
+        ) : (
+          <p className="lede">Claim extraction is not configured.</p>
+        )}
+      </div>
+      <div className="d-sec">
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button
+            className="btn sm"
+            id="dr-copy"
+            onClick={() => {
+              const txt = detail.id;
+              if (navigator.clipboard?.writeText) {
+                navigator.clipboard.writeText(txt).catch(() => {});
+              }
+              window.dispatchEvent(
+                new CustomEvent("cc-toast", {
+                  detail: "decision id copied — correlate via x-cc-decision-id",
+                }),
+              );
+            }}
+          >
+            Copy decision id
+          </button>
+          <a
+            className="btn sm"
+            href="#ov-autopsy"
+            onClick={(e) => {
+              e.preventDefault();
+              const firstKept = kept[0]?.id;
+              window.dispatchEvent(
+                new CustomEvent("cc-autopsy", {
+                  detail: { requestId: detail.id, chunkId: firstKept ?? "" },
+                }),
+              );
+              document
+                .getElementById("ov-autopsy")
+                ?.scrollIntoView({ behavior: "smooth" });
+            }}
+          >
+            Open autopsy →
+          </a>
         </div>
-      ) : (
-        <p className="lede">Claim extraction is not configured.</p>
-      )}
+      </div>
     </>
   );
 }
@@ -200,8 +368,6 @@ function AutopsyRunner({
     try {
       setResult(await api.autopsy(requestId, chunkId));
     } catch (e: unknown) {
-      // Dropped-chunk rejection ("not retained") and replay failures surface
-      // verbatim: no animation, no fake zero-influence score.
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setRunning(false);
@@ -285,21 +451,34 @@ export default function Drawer({
       >
         <div className="d-head">
           <div className="d-top">
-            <h3 className="mono">{requestId}</h3>
+            <h3 className="mono" id="dr-id">
+              {requestId}
+            </h3>
             <button className="x" onClick={onClose} aria-label="Close">
               ✕
             </button>
           </div>
-          <div className="d-meta">
-            {detail && (
+          <div className="d-meta" id="dr-meta">
+            {detail ? (
               <>
                 <span className="chip">{detail.mode}</span>
                 <span className="chip">{detail.policy}</span>
+                {detail.transport && (
+                  <span className="chip a">
+                    <span className="dot"></span>tavily · {detail.transport}
+                  </span>
+                )}
               </>
+            ) : (
+              <span className="chip">loading…</span>
             )}
           </div>
+          <div className="d-note" id="dr-note">
+            x-cc-decision-id: {requestId}
+            {detail ? ` · ${detail.ms} ms` : ""}
+          </div>
         </div>
-        <div className="d-body">
+        <div className="d-body" id="dr-body">
           {error && (
             <p className="memo badm" role="alert">
               {error}

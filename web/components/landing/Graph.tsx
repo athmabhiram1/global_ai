@@ -1,9 +1,30 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // Decorative gateway graph. The canvas animation carries no data; the
 // admitted/killed counters are real ledger totals passed in as props.
+// Nodes drag with 16px snap; Reset layout restores the template positions.
+const BASE = [
+  { left: "8%", top: "52%", cls: "", title: "retriever", sub: "tavily · relay" },
+  {
+    left: "42%",
+    top: "30%",
+    cls: "gw",
+    title: "admission gate",
+    sub: "authority · freshness · utility",
+  },
+  {
+    left: "74%",
+    top: "55%",
+    cls: "",
+    title: "provider",
+    sub: "curated request only",
+  },
+] as const;
+
+const SNAP = 16;
+
 export default function Graph({
   admitted,
   killed,
@@ -14,6 +35,17 @@ export default function Graph({
   live: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
+  const [off, setOff] = useState<{ x: number; y: number }[]>(() =>
+    BASE.map(() => ({ x: 0, y: 0 })),
+  );
+  const dragRef = useRef<{
+    idx: number;
+    sx: number;
+    sy: number;
+    ox: number;
+    oy: number;
+  } | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -22,7 +54,9 @@ export default function Graph({
     if (!ctx) return;
     let raf = 0;
     let t = 0;
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reduced =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     const draw = () => {
       const w = (canvas.width = canvas.offsetWidth);
@@ -54,51 +88,103 @@ export default function Graph({
     return () => cancelAnimationFrame(raf);
   }, []);
 
+  const onPointerDown = (
+    e: React.PointerEvent<HTMLDivElement>,
+    idx: number,
+  ) => {
+    if (
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    )
+      return;
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    dragRef.current = {
+      idx,
+      sx: e.clientX,
+      sy: e.clientY,
+      ox: off[idx].x,
+      oy: off[idx].y,
+    };
+    e.currentTarget.classList.add("drag");
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const nx =
+      Math.round((d.ox + e.clientX - d.sx) / SNAP) * SNAP;
+    const ny =
+      Math.round((d.oy + e.clientY - d.sy) / SNAP) * SNAP;
+    setOff((prev) => prev.map((o, i) => (i === d.idx ? { x: nx, y: ny } : o)));
+  };
+
+  const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    dragRef.current = null;
+    e.currentTarget.classList.remove("drag");
+  };
+
   return (
     <div className="graph-outer">
-      <div className="graph-frame" id="graph-frame">
+      <div className="graph-frame" id="graph-frame" ref={frameRef}>
         <canvas id="gcv" aria-hidden="true" ref={canvasRef} />
-        <div className="node" style={{ left: "8%", top: "52%" }}>
-          <div className="ncard">
-            <div className="n-top">
-              <span className="dot"></span>
-              <b>retriever</b>
+        {BASE.map((n, i) => (
+          <div
+            key={n.title}
+            className={`node${n.cls ? ` ${n.cls}` : ""}`}
+            data-drag="true"
+            style={{
+              left: n.left,
+              top: n.top,
+              transform: `translate(${off[i].x}px, ${off[i].y}px)`,
+            }}
+            onPointerDown={(e) => onPointerDown(e, i)}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+          >
+            <div className="ncard">
+              <div className="n-top">
+                <span className="dot"></span>
+                <b>{n.title}</b>
+                {n.cls === "gw" && (
+                  <span className="g-badge">PreRequestHook</span>
+                )}
+              </div>
+              <div className="n-sub">{n.sub}</div>
             </div>
-            <div className="n-sub">tavily · relay</div>
           </div>
-        </div>
-        <div className="node gw" style={{ left: "42%", top: "30%" }}>
-          <div className="ncard">
-            <div className="n-top">
-              <span className="dot"></span>
-              <b>admission gate</b>
-              <span className="g-badge">PreRequestHook</span>
-            </div>
-            <div className="n-sub">authority · freshness · utility</div>
-          </div>
-        </div>
-        <div className="node" style={{ left: "74%", top: "55%" }}>
-          <div className="ncard">
-            <div className="n-top">
-              <span className="dot"></span>
-              <b>provider</b>
-            </div>
-            <div className="n-sub">curated request only</div>
-          </div>
-        </div>
+        ))}
         <div className="g-corner">
           <span className="pill">
             <span className="dot"></span>
-            {live ? "LIVE" : "OFFLINE"} · <b>PreRequestHook</b> · admitted{" "}
-            <b className="acc" id="gw-adm">
-              {admitted}
-            </b>{" "}
-            · killed <b id="gw-kill">{killed}</b>
+            {live ? (
+              <>
+                LIVE · <b>PreRequestHook</b> · admitted{" "}
+                <b className="acc" id="gw-adm">
+                  {admitted}
+                </b>{" "}
+                · killed <b id="gw-kill">{killed}</b>
+              </>
+            ) : (
+              <>
+                offline · <b>PreRequestHook</b> · last seen admitted{" "}
+                <b className="acc" id="gw-adm">
+                  {admitted}
+                </b>{" "}
+                · killed <b id="gw-kill">{killed}</b>
+              </>
+            )}
           </span>
+          <button
+            className="btn xs"
+            id="gw-reset"
+            onClick={() => setOff(BASE.map(() => ({ x: 0, y: 0 })))}
+          >
+            Reset layout
+          </button>
         </div>
         <div className="g-hint">
-          Killed chunks fall out with reason codes — open the console for the
-          real ledger.
+          Drag the nodes — snap 16px — the request path keeps flowing. Killed
+          chunks fall out with reason codes.
         </div>
       </div>
     </div>

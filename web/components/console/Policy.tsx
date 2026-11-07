@@ -14,6 +14,19 @@ export const MODE_DESC: Record<string, string> = {
 
 export type Mode = "annotate" | "rewrite" | "block";
 
+/** Kill list is live union: config authority.deny + Denied reputation rows. */
+export function unionDenied(
+  summary: PolicySummary | null,
+  repDenied: string[],
+): string[] {
+  const fromConfig: string[] = [];
+  const auth = summary?.authority as { deny?: unknown } | undefined;
+  if (Array.isArray(auth?.deny)) {
+    for (const d of auth.deny) if (typeof d === "string" && d) fromConfig.push(d);
+  }
+  return [...new Set([...fromConfig, ...(repDenied || [])])].sort();
+}
+
 export function ModeSeg({
   mode,
   onMode,
@@ -50,6 +63,7 @@ export function PolicyView({
   denied: string[];
   onMode: (m: Mode) => void;
 }) {
+  const killList = unionDenied(summary, denied);
   return (
     <div className="pol-grid">
       <div className="codeblk">
@@ -71,8 +85,8 @@ export function PolicyView({
         <div className="crow2">
           <b>Deny kill-list</b>
           <div className="cv" data-testid="deny-chips">
-            {denied.length > 0 ? (
-              denied.map((d) => (
+            {killList.length > 0 ? (
+              killList.map((d) => (
                 <span key={d} className="chip r">
                   {d}
                 </span>

@@ -2,31 +2,42 @@
 
 import { useEffect, useRef } from "react";
 
-const WORDS = ["poisoned", "stale", "spammy", "conflicted", "bloated"];
+export const ROT_WORDS = [
+  "poisoned",
+  "stale",
+  "duplicated",
+  "unverified",
+  "anonymous",
+] as const;
+export const ROT_MS = 2700;
 
 export function RotatingWord() {
   const ref = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
+    const reduced =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) return;
     let i = 0;
     const el = ref.current;
     if (!el) return;
     const id = setInterval(() => {
-      i = (i + 1) % WORDS.length;
+      i = (i + 1) % ROT_WORDS.length;
       el.classList.add("out");
-      const w = WORDS[i];
+      const w = ROT_WORDS[i];
       setTimeout(() => {
         el.textContent = w;
         el.classList.remove("out");
       }, 280);
-    }, 2600);
+    }, ROT_MS);
     return () => clearInterval(id);
   }, []);
 
   return (
     <span className="rot">
       <span className="rot-in" id="rotw" ref={ref}>
-        {WORDS[0]}
+        {ROT_WORDS[0]}
       </span>
     </span>
   );
@@ -58,7 +69,7 @@ export default function Hero() {
             <path d="M5 12h14M13 6l6 6-6 6" />
           </svg>
         </a>
-        <a className="btn" href="/console#connect">
+        <a className="btn" id="btn-connect-l" href="/console#connect">
           Connect your sidecar
         </a>
         <span className="or">

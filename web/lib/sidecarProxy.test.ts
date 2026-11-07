@@ -92,4 +92,25 @@ describe("sidecar proxy forwarding", () => {
     });
     expect(res.status).toBe(503);
   });
+
+  it("passes upstream 401 through with body (UI surfaces the token hint)", async () => {
+    const seen: Array<{ url: string; init?: RequestInit }> = [];
+    vi.stubGlobal("fetch", stubUpstream(seen, 401, "unauthorized: bad token"));
+    const res = await forwardToSidecar(
+      ["api", "context-curator", "decisions"],
+      {
+        method: "GET",
+        search: "",
+        contentType: null,
+        adminToken: "secret-token",
+      },
+    );
+    expect(res.status).toBe(401);
+    expect(await new Response(res.body).text()).toContain(
+      "unauthorized: bad token",
+    );
+    const headers = new Headers(seen[0].init?.headers);
+    // Auth is injected server-side only; 401 body passes through for the UI hint.
+    expect(headers.get("authorization")).toBe("Bearer secret-token");
+  });
 });

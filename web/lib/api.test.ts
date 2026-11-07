@@ -192,4 +192,46 @@ describe("api paths (same-origin proxy, no token in browser)", () => {
     const row: DecisionRow = decisionRowFixture;
     expect(row.request_id).toBe("rq-1");
   });
+
+  it("never sends Authorization from the browser (token stays server-side)", async () => {
+    const { fetchFn, calls } = stubFetch(
+      () => new Response(JSON.stringify([]), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchFn);
+    await api.decisions();
+    const headers = new Headers(calls[0].init?.headers);
+    expect(headers.get("authorization")).toBeNull();
+    expect(calls[0].url.startsWith("/api/cc/")).toBe(true);
+  });
+
+  it("autopsy preserves dropped-chunk rejection verbatim (retained-only, no fake zero)", async () => {
+    const { fetchFn } = stubFetch(
+      () => new Response("chunk c9 was not retained", { status: 422 }),
+    );
+    vi.stubGlobal("fetch", fetchFn);
+    await expect(api.autopsy("rq-1", "c9")).rejects.toThrow(
+      /422.*not retained/,
+    );
+  });
+
+  it("claims preserves the unconfigured error verbatim", async () => {
+    const { fetchFn } = stubFetch(
+      () =>
+        new Response("Claim extraction is not configured", { status: 501 }),
+    );
+    vi.stubGlobal("fetch", fetchFn);
+    await expect(api.claims("abc123")).rejects.toThrow(
+      /501.*not configured/,
+    );
+  });
+
+  it("policyText parses mode from raw YAML (summary-404 fallback path)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      async () => new Response("mode: rewrite\nbudget: {}", { status: 200 }),
+    );
+    const t = await api.policyText();
+    expect(t.mode).toBe("rewrite");
+    expect(t.raw).toContain("rewrite");
+  });
 });

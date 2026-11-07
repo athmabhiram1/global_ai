@@ -1,4 +1,4 @@
-import { MIN_SAMPLE, fmtInt } from "../../lib/format";
+import { fmtInt } from "../../lib/format";
 
 export interface LandingStats {
   p95ms: number | null;
@@ -19,7 +19,7 @@ export default function Stats({ s }: { s: LandingStats }) {
       : "—";
   return (
     <div className="stats-row">
-      <div className="stat-c">
+      <div className="stat-c" data-reveal style={{ ["--i" as string]: 0 }}>
         <div className="v">
           <em>&lt;</em>
           <span>{v(s.p95ms)}</span>
@@ -27,7 +27,7 @@ export default function Stats({ s }: { s: LandingStats }) {
         </div>
         <p>p95 overhead · no refresh</p>
       </div>
-      <div className="stat-c">
+      <div className="stat-c" data-reveal style={{ ["--i" as string]: 1 }}>
         <div className="v">
           <em>≥</em>
           <span>{v(s.cut)}</span>
@@ -35,14 +35,14 @@ export default function Stats({ s }: { s: LandingStats }) {
         </div>
         <p>input tokens cut · context-heavy</p>
       </div>
-      <div className="stat-c">
+      <div className="stat-c" data-reveal style={{ ["--i" as string]: 2 }}>
         <div className="v">
           <span>{share}</span>
           <span className="u">%</span>
         </div>
         <p>dropped chunks carry a reason code</p>
       </div>
-      <div className="stat-c">
+      <div className="stat-c" data-reveal style={{ ["--i" as string]: 3 }}>
         <div className="v">
           <span>1</span>
         </div>
