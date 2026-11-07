@@ -177,7 +177,9 @@ export default function Shell() {
             {!decisions.connected && decisions.error && (
               <p className="memo badm" role="alert">
                 Sidecar unreachable ({decisions.error}). Showing last
-                successful data.
+                successful data.{" "}
+                {decisions.error.includes("401") &&
+                  "Check CC_ADMIN_TOKEN in web/.env.local matches the sidecar (see web/.env.example)."}
               </p>
             )}
             {scoped === null && decisions.connected && (
