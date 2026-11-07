@@ -76,3 +76,29 @@ func (c *Chain) Extract(ctx context.Context, urls []string, q string) ([]Result,
 	}
 	return nil, "", lastErr
 }
+
+// chainAdapter adapts a Chain to the Retriever interface (dropping the
+// transport name) so chains can serve callers that take a Retriever:
+// freshness.Refresh and sidecar ScoreClaims.
+type chainAdapter struct{ c *Chain }
+
+// AsRetriever returns the chain as a Retriever. A nil chain yields a nil
+// Retriever: callers treat nil as "refresh unavailable, degrade".
+func (c *Chain) AsRetriever() Retriever {
+	if c == nil {
+		return nil
+	}
+	return &chainAdapter{c: c}
+}
+
+func (a *chainAdapter) Name() string { return "chain" }
+
+func (a *chainAdapter) Search(ctx context.Context, q Query) ([]Result, error) {
+	res, _, err := a.c.Search(ctx, q)
+	return res, err
+}
+
+func (a *chainAdapter) Extract(ctx context.Context, urls []string, q string) ([]Result, error) {
+	res, _, err := a.c.Extract(ctx, urls, q)
+	return res, err
+}

@@ -45,6 +45,18 @@ var knownFreshnessClasses = map[string]bool{
 	"price": true, "version": true, "law": true, "static": true,
 }
 
+// TavilyConfig bounds the freshness oracle: which transports to try, in
+// what order, and how the plugin authenticates the direct path. The relay
+// path needs no key: Bifrost injects the credential server-side.
+type TavilyConfig struct {
+	TransportOrder []string `json:"transport_order"`
+	RelayName      string   `json:"relay_name"`
+	RelayBaseURL   string   `json:"relay_base_url"`
+	SearchDepth    string   `json:"search_depth"`
+	MaxAgeHours    int      `json:"max_age_hours"`
+	TimeoutMs      int      `json:"timeout_ms"`
+}
+
 // Config is the plugin's "config" block from config.json.
 type Config struct {
 	Enabled      bool               `json:"enabled"`
@@ -53,6 +65,7 @@ type Config struct {
 	Budget       BudgetConfig       `json:"budget"`
 	Independence IndependenceConfig `json:"independence"`
 	Authority    AuthorityConfig    `json:"authority"`
+	Tavily       TavilyConfig       `json:"tavily"`
 	// Policies holds per-virtual-key and per-route overrides by name.
 	Policies map[string]Policy `json:"policies,omitempty"`
 }
@@ -111,6 +124,15 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Authority.RequirePrimaryFor == nil {
 		c.Authority.RequirePrimaryFor = []string{"price"}
+	}
+	if len(c.Tavily.TransportOrder) == 0 {
+		c.Tavily.TransportOrder = []string{"http"}
+	}
+	if c.Tavily.RelayName == "" {
+		c.Tavily.RelayName = "tavily"
+	}
+	if c.Tavily.SearchDepth == "" {
+		c.Tavily.SearchDepth = "basic"
 	}
 }
 
