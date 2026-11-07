@@ -119,6 +119,24 @@ Policy is the plugin's `config` block in `config/bifrost.json`
 168h, static 8760h), `authority.allow/deny`, `independence.min_sources`
 (2). `require_primary_for` accepts only known freshness classes.
 
+## 7. Serve the console
+
+Open `web/template.html` directly in a browser — no build step. The sidecar
+ships permissive CORS, so a `file://` page can call the API.
+
+Two query params control the data source:
+
+- `?sidecar=<url>` repoints the API base (default `http://localhost:8090`).
+  With the dev stack from section 2, use
+  `?sidecar=http://127.0.0.1:18090`.
+- `?mock=1` forces the built-in sim data (same shapes as the sidecar
+  contract) instead of calling the sidecar. Live is the default.
+
+The deny/mode controls in the policy panel are local-only: they restyle the
+console and steer newly simulated rows, but the gateway keeps enforcing the
+policy baked into the container's `config.json` until you rerun
+`run-stack.ps1` (section 2) with a new `-Mode`.
+
 ## Troubleshooting
 
 - `401 virtual_key_required` → provision auth (section 2); the stack

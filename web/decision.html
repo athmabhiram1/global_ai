@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Context Curator — decision drawer (test UI)</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 24px; color: #222; }
+  table { border-collapse: collapse; width: 100%; margin-top: 12px; }
+  th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; font-size: 14px; }
+  tr.row { cursor: pointer; } tr.row:hover { background: #f2f6ff; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; margin: 1px; }
+  .kept { background: #dff0d8; } .dropped { background: #f2dede; }
+  #detail { margin-top: 20px; padding: 12px; border: 1px solid #999; }
+  #err { color: #a00; }
+  input { width: 280px; }
+</style>
+</head>
+<body>
+<h1>Context Curator — decision drawer</h1>
+<p>Sidecar: <input id="base" value="http://127.0.0.1:18090">
+<button onclick="load()">Reload</button> <span id="err"></span></p>
+<table id="list"><thead><tr>
+<th>request</th><th>mode</th><th>chunks</th><th>tokens</th><th>saved</th><th>dropped</th>
+</tr></thead><tbody></tbody></table>
+<div id="detail"><em>Click a row to inspect its decision.</em></div>
+<script>
+const $ = (id) => document.getElementById(id);
+const base = () => $("base").value.replace(/\/$/, "");
+async function get(path) {
+  const r = await fetch(base() + path);
+  if (!r.ok) throw new Error(path + " -> " + r.status);
+  return r.json();
+}
+async function load() {
+  $("err").textContent = "";
+  try {
+    const rows = await get("/api/context-curator/decisions");
+    const tb = $("list").querySelector("tbody");
+    tb.innerHTML = "";
+    rows.forEach((d) => {
+      const tr = document.createElement("tr");
+      tr.className = "row";
+      const drops = d.dropped || [];
+      const saved = d.tokens_in ? Math.round(100 * (d.tokens_in - d.tokens_out) / d.tokens_in) : 0;
+      tr.innerHTML = "<td>" + d.request_id.slice(0, 8) + "</td><td>" + d.mode + "</td>" +
+        "<td>" + d.chunks_kept + "/" + d.chunks_in + "</td>" +
+        "<td>" + d.tokens_in + " -> " + d.tokens_out + "</td>" +
+        "<td>" + saved + "%</td><td>" + drops.length + "</td>";
+      tr.onclick = () => show(d.request_id);
+      tb.appendChild(tr);
+    });
+  } catch (e) { $("err").textContent = e.message; }
+}
+async function show(id) {
+  $("err").textContent = "";
+  try {
+    const d = await get("/api/context-curator/decisions/" + id);
+    let html = "<h3>" + d.request_id + " <small>(" + d.mode + " / " + d.policy + ")</small></h3>";
+    html += "<p>tokens " + d.tokens_in + " -&gt; " + d.tokens_out +
+      " (" + d.token_method + "), tavily credits " + d.tavily_credits + "</p>";
+    html += "<p>kept: " + d.kept.map((k) => '<span class="badge kept">' + k + "</span>").join("") + "</p>";
+    const drops = d.dropped || [];
+    html += "<p>dropped:</p><ul>" + drops.map((x) =>
+      '<li><span class="badge dropped">' + x.reason + "</span> " + x.id + "</li>").join("") + "</ul>";
+    if (drops.length) {
+      html += '<button onclick="autopsy(\'' + d.request_id + "','" + drops[0].id + "')\">" +
+        "autopsy first drop</button><div id='ax'></div>";
+    }
+    $("detail").innerHTML = html;
+  } catch (e) { $("err").textContent = e.message; }
+}
+async function autopsy(reqId, chunkId) {
+  try {
+    const r = await fetch(base() + "/api/context-curator/autopsy", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ request_id: reqId, chunk_id: chunkId })
+    });
+    const ax = document.getElementById("ax");
+    if (!r.ok) { ax.textContent = "autopsy -> " + r.status; return; }
+    const a = await r.json();
+    ax.innerHTML = "<p>influence " + a.influence + (a.cached ? " (cached)" : "") + "</p>" +
+      "<p>changed sentences: " + a.diff.changed.length + " / " + a.diff.total + "</p>";
+  } catch (e) { document.getElementById("ax").textContent = e.message; }
+}
+load();
+</script>
+</body>
+</html>

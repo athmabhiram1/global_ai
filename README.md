@@ -201,6 +201,16 @@ near-duplicate press releases (collapsed to one chunk), and version/law
 controls. See [`examples/eval/results.md`](examples/eval/results.md) for
 the full per-question table.
 
+### Console
+
+Open [`web/template.html`](web/template.html) in a browser. It is live by
+default: it reads `?sidecar=` (default `http://localhost:8090`) and talks to
+the sidecar's documented API, falling back to built-in sim data with
+`?mock=1`. Our dev stacks publish the sidecar on `127.0.0.1:18090`, so use
+`?sidecar=http://127.0.0.1:18090`. The measured strip in the console matches
+`examples/eval/results.md`: accuracy 0.480 → 1.000, tokens −12.0%,
+9 ms latency.
+
 ## Documentation
 
 | Document | Contents |

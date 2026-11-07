@@ -5,6 +5,9 @@
 # as scripts/wave0-spike.ps1: either set $env:BF_VIRTUAL_KEY to a provisioned
 # key, or set $env:BIFROST_SETUP_TOKEN (default "dev-setup-token") and this
 # script disables auth enforcement inside the throwaway container.
+# Key=value lines are also read from a .env file in the repo root (skipped
+# when absent); explicit process-environment values win over the file.
+# See .env.example for every variable the stack consumes.
 #
 # Usage:
 #   ./run-stack.ps1                       # rewrite mode on 18080/18090
@@ -23,12 +26,44 @@ $ErrorActionPreference = "Stop"
 function Write-Step($msg) { Write-Host "--> $msg" -ForegroundColor Cyan }
 function Write-Ok($msg) { Write-Host "  ok  $msg" -ForegroundColor Green }
 
+# Load KEY=VALUE lines from a .env file in the repo root when present.
+# Blank lines and '#' comments are skipped; values already present in the
+# process environment win over the file.
+$dotenv = Join-Path (Split-Path $PSScriptRoot -Parent) ".env"
+if (Test-Path $dotenv) {
+    Write-Step "loading $dotenv"
+    Get-Content $dotenv | ForEach-Object {
+        $line = $_.Trim()
+        if (-not $line -or $line.StartsWith("#")) { return }
+        $idx = $line.IndexOf("=")
+        if ($idx -le 0) { return }
+        $name = $line.Substring(0, $idx).Trim()
+        $value = $line.Substring($idx + 1).Trim()
+        if ($value.Length -ge 2 -and
+            (($value.StartsWith('"') -and $value.EndsWith('"')) -or
+             ($value.StartsWith("'") -and $value.EndsWith("'")))) {
+            $value = $value.Substring(1, $value.Length - 2)
+        }
+        $current = [System.Environment]::GetEnvironmentVariable($name)
+        if (-not $current) {
+            [System.Environment]::SetEnvironmentVariable($name, $value)
+        }
+    }
+}
+
 if ($Mode -notin @("annotate", "rewrite", "block")) {
     throw "Mode must be annotate, rewrite, or block"
 }
 
 $setupToken = $env:BIFROST_SETUP_TOKEN
 if (-not $setupToken) { $setupToken = "dev-setup-token" }
+
+$openaiKey = $env:OPENAI_API_KEY
+if (-not $openaiKey) { $openaiKey = "unused" }
+$mockKey = $env:MOCK_API_KEY
+if (-not $mockKey) { $mockKey = "unused" }
+$tavilyKey = $env:TAVILY_API_KEY
+if (-not $tavilyKey) { $tavilyKey = "unused" }
 
 $datadir = Join-Path ([System.IO.Path]::GetTempPath()) "cc-stack-$Container"
 New-Item -ItemType Directory -Force -Path $datadir | Out-Null
@@ -50,9 +85,9 @@ Write-Step "starting $Container ($Image) on :$BifrostPort / :$SidecarPort"
 docker run -d --name $Container `
     -p "${BifrostPort}:8080" -p "${SidecarPort}:8090" `
     -e "BIFROST_SETUP_TOKEN=$setupToken" `
-    -e "OPENAI_API_KEY=unused" `
-    -e "MOCK_API_KEY=unused" `
-    -e "TAVILY_API_KEY=unused" `
+    -e "OPENAI_API_KEY=$openaiKey" `
+    -e "MOCK_API_KEY=$mockKey" `
+    -e "TAVILY_API_KEY=$tavilyKey" `
     -v "${datadir}:/data/bifrost" `
     $Image | Out-Null
 

@@ -84,7 +84,23 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/context-curator/feedback", s.requireAuth(s.handleFeedback))
 	mux.HandleFunc("POST /api/context-curator/autopsy", s.requireAuth(s.handleAutopsy))
 	mux.HandleFunc("GET /api/context-curator/claims/{hash}", s.requireAuth(s.handleClaim))
-	return mux
+	return cors(mux)
+}
+
+// cors allows the browser-based demo UI (opened as a plain file or served
+// from anywhere) to call the API directly. The API carries no cookies, so a
+// wildcard origin is sufficient; auth still uses the Bearer [REDACTED]
+func cors(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
