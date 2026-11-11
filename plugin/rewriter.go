@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/maximhq/bifrost/core/schemas"
 
+	"github.com/athmabhiram/context-curator/plugin/model"
 	"github.com/athmabhiram/context-curator/plugin/store"
 )
 
@@ -104,7 +105,105 @@ func newPipeline(cfg *Config) *pipeline {
 	if cfg == nil {
 		cfg = DefaultConfig()
 	}
-	return &pipeline{cfg: cfg, utilities: map[string]float64{}}
+	return &pipeline{cfg: cfg, store: storeForPersist(), utilities: map[string]float64{}}
+}
+
+// effectiveMode resolves the mode for this request: the stored live mode
+// when present and valid, otherwise the boot config mode.
+func (p *pipeline) effectiveMode() string {
+	if p != nil && p.store != nil {
+		if v, err := p.store.GetSetting(context.Background(), "mode"); err == nil {
+			switch Mode(v) {
+			case ModeAnnotate, ModeRewrite, ModeBlock:
+				return v
+			}
+		}
+	}
+	if p == nil || p.cfg == nil {
+		return string(ModeAnnotate)
+	}
+	return string(p.cfg.Mode)
+}
+
+// reputationDenied reports whether the domain carries a live Denied
+// reputation row. Unknown domains, a missing store, and store errors all
+// report false so admission degrades to the config deny list.
+func (p *pipeline) reputationDenied(domain string) bool {
+	if p == nil || p.store == nil || domain == "" {
+		return false
+	}
+	rep, err := p.store.GetReputation(context.Background(), domain)
+	if err != nil {
+		return false
+	}
+	return rep.Denied
+}
+
+// admit runs the hard-deny gate for one chunk: the config deny list first,
+// then the live reputation deny list for known-provenance chunks. Inferred
+// provenance is never hard-dropped.
+func (p *pipeline) admit(c Chunk, policy Policy) (bool, string) {
+	if ok, reason := policy.Admit(c); !ok {
+		return false, reason
+	}
+	if c.Provenance == ProvenanceKnown && p.reputationDenied(c.Domain) {
+		return false, ReasonAuthorityDenied
+	}
+	return true, ""
+}
+
+// buildChunkRecords summarizes every input chunk after selection, keyed by
+// ID: kept chunks carry their verdict with final scores and cluster fields,
+// dropped chunks carry the drop reason and their last computed scores. Later
+// entries in all win per ID, so callers pass scored base chunks first and
+// cluster-annotated representatives after.
+func buildChunkRecords(all []Chunk, keptIDs []string, dropped []DropReason, now time.Time) []model.ChunkRecord {
+	byID := make(map[string]Chunk, len(all))
+	order := []string{}
+	for _, c := range all {
+		if _, ok := byID[c.ID]; !ok {
+			order = append(order, c.ID)
+		}
+		byID[c.ID] = c
+	}
+	kept := map[string]bool{}
+	for _, id := range keptIDs {
+		kept[id] = true
+	}
+	reasons := map[string]string{}
+	for _, d := range dropped {
+		reasons[d.ID] = d.Reason
+	}
+	out := make([]model.ChunkRecord, 0, len(order))
+	for _, id := range order {
+		c := byID[id]
+		age := now.Sub(c.FetchedAt).Hours()
+		if age < 0 {
+			age = 0
+		}
+		rec := model.ChunkRecord{
+			ID: id, Domain: c.Domain,
+			Authority: string(c.Authority), FreshnessClass: c.FreshnessClass,
+			AgeHours: age, Tokens: c.Tokens,
+			ClusterID: c.ClusterID, ClusterSize: c.ClusterSize,
+			Provenance: string(c.Provenance),
+			Refreshed:  c.Refreshed, RefreshFailed: c.RefreshFailed,
+			SourceURLs:   c.SourceURLs,
+			Relevance:    c.Relevance,
+			Freshness:    c.Freshness,
+			Independence: c.Independence,
+			Utility:      c.Utility,
+			Score:        c.Score,
+		}
+		if kept[id] {
+			rec.Verdict = "keep"
+		} else {
+			rec.Verdict = "drop"
+			rec.Reason = reasons[id]
+		}
+		out = append(out, rec)
+	}
+	return out
 }
 
 // utilityFor returns the cached posterior mean for a domain, loading it from
@@ -149,7 +248,8 @@ func (p *pipeline) utilityFor(domain string) float64 {
 // records the decision without touching the request; block mode rejects the
 // request on a hard deny without touching it either.
 func (p *pipeline) handle(ctx *schemas.BifrostContext, req *schemas.BifrostRequest) (*Decision, error) {
-	d := &Decision{Mode: string(p.cfg.Mode), Policy: "default"}
+	mode := p.effectiveMode()
+	d := &Decision{Mode: mode, Policy: "default"}
 	if req == nil || req.ChatRequest == nil {
 		return d, nil
 	}
@@ -173,13 +273,13 @@ func (p *pipeline) handle(ctx *schemas.BifrostContext, req *schemas.BifrostReque
 	dropped := []DropReason{}
 	live := make([]Chunk, 0, len(chunks))
 	for _, c := range chunks {
-		if ok, reason := policy.Admit(c); !ok {
+		if ok, reason := p.admit(c, policy); !ok {
 			dropped = append(dropped, DropReason{ID: c.ID, Reason: reason})
 		} else {
 			live = append(live, c)
 		}
 	}
-	if len(dropped) > 0 && p.cfg.Mode == ModeBlock {
+	if len(dropped) > 0 && Mode(mode) == ModeBlock {
 		d.RequestID = uuid.NewString()
 		d.ChunksIn = len(chunks)
 		d.ChunksKept = len(live)
@@ -187,6 +287,7 @@ func (p *pipeline) handle(ctx *schemas.BifrostContext, req *schemas.BifrostReque
 			d.Kept = append(d.Kept, c.ID)
 		}
 		d.Dropped = dropped
+		d.Chunks = buildChunkRecords(chunks, d.Kept, dropped, now)
 		d.TokensIn = sumTokens(chunks)
 		d.TokensOut = sumTokens(live)
 		d.TokenMethod = NewTokenCounter().Method()
@@ -222,7 +323,7 @@ func (p *pipeline) handle(ctx *schemas.BifrostContext, req *schemas.BifrostReque
 	}
 	kept, over := Select(reps, p.cfg.Budget.MaxContextTokens, p.cfg.Independence.MinSources, lambdaMMR)
 	dropped = append(dropped, over...)
-	if p.cfg.Mode == ModeRewrite {
+	if Mode(mode) == ModeRewrite {
 		if err := Rewrite(req, kept); err != nil {
 			return nil, err
 		}
@@ -234,6 +335,9 @@ func (p *pipeline) handle(ctx *schemas.BifrostContext, req *schemas.BifrostReque
 		d.Kept = append(d.Kept, c.ID)
 	}
 	d.Dropped = dropped
+	// Scored base chunks first, cluster-annotated representatives after, so
+	// kept records carry their final cluster fields.
+	d.Chunks = buildChunkRecords(append(append([]Chunk{}, chunks...), kept...), d.Kept, dropped, now)
 	d.TokensIn = sumTokens(chunks)
 	d.TokensOut = sumTokens(kept)
 	d.TokenMethod = NewTokenCounter().Method()

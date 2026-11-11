@@ -45,6 +45,10 @@ CREATE TABLE IF NOT EXISTS claims (
   freshness REAL, evidence TEXT, created_at INTEGER,
   PRIMARY KEY (content_hash, claim)
 );
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT
+);
 `
 
 // Store is a SQLite-backed decision and learning record.
@@ -79,6 +83,32 @@ func Open(path string) (*Store, error) {
 
 // Close releases the database.
 func (s *Store) Close() error { return s.db.Close() }
+
+// SetSetting upserts one key-value setting (e.g. the live policy mode).
+func (s *Store) SetSetting(ctx context.Context, key, value string) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO settings(key, value) VALUES(?,?)
+		 ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+		key, value)
+	if err != nil {
+		return fmt.Errorf("store: %w", err)
+	}
+	return nil
+}
+
+// GetSetting loads one setting. A missing key returns ErrNotFound.
+func (s *Store) GetSetting(ctx context.Context, key string) (string, error) {
+	var value string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT value FROM settings WHERE key = ?`, key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("store: %w", err)
+	}
+	return value, nil
+}
 
 // InsertDecision records one admission decision with its redacted request.
 // An empty request id is rejected: silent "" primary keys would collide.
