@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { mapDecisions, type DecisionListItem } from "../lib/api";
 import { cutPct, MIN_SAMPLE, p95, reasonShare } from "../lib/format";
 import Hero from "../components/landing/Hero";
@@ -23,6 +25,7 @@ function statsOf(rows: DecisionListItem[]) {
 }
 
 export default function Landing() {
+  const router = useRouter();
   const [rows, setRows] = useState<DecisionListItem[]>([]);
   // null = still booting; true/false = sidecar reachable or not
   const [live, setLive] = useState<boolean | null>(null);
@@ -46,7 +49,7 @@ export default function Landing() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        location.href = "/console";
+        router.push("/console");
       }
     };
     window.addEventListener("keydown", onKey);
@@ -78,7 +81,7 @@ export default function Landing() {
     <main id="pg-landing" className="page active">
       <header className="lnav">
         <div className="wrap in">
-          <a className="logo" href="/" aria-label="Context Curator home">
+          <Link className="logo" href="/" aria-label="Context Curator home">
             <svg className="logo-svg" viewBox="0 0 32 34" aria-hidden="true">
               <path
                 d="M16 2 L29 9.5 V24.5 L16 32 L3 24.5 V9.5 Z"
@@ -98,20 +101,20 @@ export default function Landing() {
             </svg>
             <b>Context Curator</b>
             <small>v2</small>
-          </a>
+          </Link>
           <nav aria-label="Sections">
             <button
-              onClick={() => (location.href = "/console#ov-traces")}
+              onClick={() => router.push("/console#ov-traces")}
             >
               Traces
             </button>
-            <button onClick={() => (location.href = "/console#ov-autopsy")}>
+            <button onClick={() => router.push("/console#ov-autopsy")}>
               Autopsy
             </button>
-            <button onClick={() => (location.href = "/console#ov-sources")}>
+            <button onClick={() => router.push("/console#ov-sources")}>
               Sources
             </button>
-            <button onClick={() => (location.href = "/console#ov-policy")}>
+            <button onClick={() => router.push("/console#ov-policy")}>
               Policy
             </button>
           </nav>
@@ -120,7 +123,7 @@ export default function Landing() {
               className="kchip"
               id="lnav-k"
               aria-label="Search — open console"
-              onClick={() => (location.href = "/console")}
+              onClick={() => router.push("/console")}
             >
               <svg className="ic" viewBox="0 0 24 24">
                 <circle cx="11" cy="11" r="7" />
@@ -129,9 +132,9 @@ export default function Landing() {
               <span>Search</span>
               <kbd>⌘K</kbd>
             </button>
-            <a className="btn pri" href="/console">
+            <Link className="btn pri" href="/console">
               Open console
-            </a>
+            </Link>
           </div>
         </div>
       </header>
