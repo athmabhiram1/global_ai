@@ -79,6 +79,7 @@ export default function Landing() {
 
   return (
     <main id="pg-landing" className="page active">
+      <div id="toasts" role="status" aria-live="polite"></div>
       <header className="lnav">
         <div className="wrap in">
           <Link className="logo" href="/" aria-label="Context Curator home">

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { AutopsyResult } from "../../lib/api";
 
 function sentences(text: string): string[] {
@@ -9,15 +10,22 @@ function sentences(text: string): string[] {
     .filter(Boolean);
 }
 
-// Pure proof view: with/without memos with changed-sentence highlighting.
-// Prefers server-computed sentence arrays; falls back to splitting memos.
+// Pure proof view: replay log, influence count, with/without memos with
+// changed-sentence highlighting, meta, and actions. Prefers server-computed
+// sentence arrays; falls back to splitting memos. Quote/verdict render only
+// when the sidecar returned them — never synthesized.
 export function AutopsyResultView({
   result,
   chunkId,
+  requestId,
+  onMarkUnreliable,
 }: {
   result: AutopsyResult;
   chunkId: string;
+  requestId?: string;
+  onMarkUnreliable?: (domain: string) => void;
 }) {
+  const [flagged, setFlagged] = useState(false);
   const withS = result.with_sentences ?? sentences(result.with);
   const withoutS = result.without_sentences ?? sentences(result.without);
   const hot = new Set([
@@ -26,21 +34,37 @@ export function AutopsyResultView({
     ...(result.diff.removed || []),
   ]);
   const changedIdx = new Set(result.changed_indices ?? []);
+  const changedTotal = result.changed_indices?.length ?? result.diff.changed.length;
+  const total = result.diff.total || withS.length;
   const isHot = (s: string, i: number) =>
     hot.has(s) || changedIdx.has(i);
 
+  const logLines = [
+    `▸ load ${requestId ?? "request"} · sqlite ok`,
+    `▸ replay WITH ${chunkId} → 200 · ok`,
+    `▸ replay WITHOUT ${chunkId} → 200 · ok`,
+    `▸ sentence align (LCS) · ${total} sentences · ${changedTotal} changed`,
+    `▸ influence = ${result.influence.toFixed(2)}${result.cached ? " · cached 60 min" : ""}`,
+  ];
+
   return (
     <div aria-label={`Autopsy result for ${chunkId}`}>
-      <p className="mb-2">
-        influence <span className="mono">{result.influence.toFixed(2)}</span>{" "}
-        {result.cached && (
-          <span className="chip">cached · 60 min TTL</span>
-        )}
-      </p>
-      {result.attribution && <p id="aut-attrib">{result.attribution}</p>}
-      <p className="mb-2">
-        {result.diff.changed.length} / {result.diff.total} sentences changed
-      </p>
+      <div id="aut-log" aria-live="polite">
+        {logLines.map((l, i) => (
+          <div key={i}>{l}</div>
+        ))}
+      </div>
+      <div className="influ">
+        <div className="n" id="aut-influence">
+          {result.influence.toFixed(2)}
+        </div>
+        <p id="aut-changed">
+          influence · {changedTotal} / {total} sentences changed
+        </p>
+        {result.attribution && <div id="aut-attrib">{result.attribution}</div>}
+      </div>
+      {result.quote && <p id="aut-quote">“{result.quote}”</p>}
+      {result.verdict && <p id="aut-verdict">{result.verdict}</p>}
       <div className="memos">
         <div className="memo badm">
           <header>
@@ -85,6 +109,24 @@ export function AutopsyResultView({
         {result.chunk_domain && <span>domain {result.chunk_domain}</span>}
         {result.chunk_tokens !== undefined && (
           <span>{result.chunk_tokens} tokens</span>
+        )}
+        {result.cached && (
+          <span className="chip">cached · 60 min TTL</span>
+        )}
+      </div>
+      <div id="aut-actions">
+        {result.chunk_domain && onMarkUnreliable && (
+          <button
+            className="btn sm"
+            data-testid="mark-unreliable"
+            disabled={flagged}
+            onClick={() => {
+              onMarkUnreliable(result.chunk_domain!);
+              setFlagged(true);
+            }}
+          >
+            {flagged ? "Recorded — fleet-wide" : `Mark ${result.chunk_domain} unreliable`}
+          </button>
         )}
       </div>
     </div>

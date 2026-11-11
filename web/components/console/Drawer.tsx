@@ -153,13 +153,35 @@ export function ChunkCard({
         )}
       </div>
       {r && (
-        <div className="ck-comp" data-testid={`scores-${chunk.id}`}>
-          <Score label="relevance" v={r.relevance} /> ·{" "}
-          <Score label="freshness" v={r.freshness} /> ·{" "}
-          <Score label="independence" v={r.independence} /> ·{" "}
-          <Score label="utility" v={r.utility} /> ·{" "}
-          <Score label="score" v={r.score} />
-        </div>
+        <>
+          <div className="ck-bar" data-testid={`scores-bar-${chunk.id}`}>
+            {(
+              [
+                ["rel", r.relevance, 0.35, "#4CC2FF"],
+                ["auth", r.authority === "primary" ? 1 : r.authority === "reputable" ? 0.8 : 0.3, 0.2, "#7ACBFF"],
+                ["fresh", r.freshness, 0.2, "#9AD8FF"],
+                ["ind", r.independence, 0.15, "#BAE5FF"],
+                ["util", r.utility, 0.1, "#D9F1FF"],
+              ] as Array<[string, number | undefined, number, string]>
+            ).map(([k, v, w, col]) => (
+              <i
+                key={k}
+                data-comp={k}
+                style={{
+                  background: col,
+                  width: `${((v ?? 0) * w * 100).toFixed(1)}%`,
+                }}
+              />
+            ))}
+          </div>
+          <div className="ck-comp" data-testid={`scores-${chunk.id}`}>
+            <Score label="relevance" v={r.relevance} /> ·{" "}
+            <Score label="freshness" v={r.freshness} /> ·{" "}
+            <Score label="independence" v={r.independence} /> ·{" "}
+            <Score label="utility" v={r.utility} /> ·{" "}
+            <Score label="score" v={r.score} />
+          </div>
+        </>
       )}
       {chunk.reason && (
         <div className="ck-why">killed: {chunk.reason}</div>
@@ -293,17 +315,26 @@ export function DecisionDrawerView({
           Claim freshness <span className="r">FR-9 · off-path · sidecar</span>
         </h4>
         {detail.claims.length > 0 ? (
-          detail.claims.map((claim, i) => (
-            <div className="claim" key={`${claim.text}-${i}`}>
-              <p>“{claim.text}”</p>
-              <div className="cm">
-                <span className="ev">
-                  evidence: {claim.evidence.join(", ")} · via {claim.source}
-                </span>
-                <span className="cf">{claim.freshness.toFixed(2)}</span>
+          detail.claims.map((claim, i) => {
+            const cls =
+              claim.freshness >= 0.7 ? "g" : claim.freshness >= 0.4 ? "a" : "r";
+            const lbl =
+              claim.freshness >= 0.7 ? "FRESH" : claim.freshness >= 0.4 ? "AGING" : "STALE";
+            return (
+              <div className="claim" key={`${claim.text}-${i}`}>
+                <p>“{claim.text}”</p>
+                <div className="cm">
+                  <span className={`chip ${cls}`}>
+                    <span className="dot"></span>
+                    {lbl} {claim.freshness.toFixed(2)}
+                  </span>
+                  <span className="ev">
+                    evidence: {claim.evidence.join(", ")} · via {claim.source}
+                  </span>
+                </div>
               </div>
-            </div>
-          ))
+            );
+          })
         ) : (
           <p className="lede">Claim extraction is not configured.</p>
         )}
@@ -399,7 +430,14 @@ function AutopsyRunner({
       )}
       {result && (
         <>
-          <AutopsyResultView result={result} chunkId={chunkId} />
+          <AutopsyResultView
+            result={result}
+            chunkId={chunkId}
+            requestId={requestId}
+            onMarkUnreliable={(domain) => {
+              api.feedback(domain, "bad").catch(() => {});
+            }}
+          />
           <button className="btn mt-2" onClick={run} disabled={running}>
             {running ? "Replaying…" : "Re-run"}
           </button>
@@ -474,7 +512,8 @@ export default function Drawer({
             )}
           </div>
           <div className="d-note" id="dr-note">
-            x-cc-decision-id: {requestId}
+            x-cc-decision-id: {requestId} — set by
+            HTTPTransportResponseHeadersHook
             {detail ? ` · ${detail.ms} ms` : ""}
           </div>
         </div>

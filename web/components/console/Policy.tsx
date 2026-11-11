@@ -55,66 +55,152 @@ export function ModeSeg({
 export function PolicyView({
   mode,
   summary,
+  raw,
   denied,
   onMode,
 }: {
   mode: string;
   summary: PolicySummary | null;
+  raw: string | null;
   denied: string[];
   onMode: (m: Mode) => void;
 }) {
   const killList = unionDenied(summary, denied);
+  const budget = (summary?.budget ?? {}) as Record<string, number>;
+  const maxTokens =
+    typeof budget.max_context_tokens === "number"
+      ? budget.max_context_tokens
+      : null;
+  const maxChunks =
+    typeof budget.max_chunks === "number" ? budget.max_chunks : null;
+  const freshness = (summary?.freshness ?? {}) as {
+    classes?: Record<string, number>;
+  };
+  const classes =
+    freshness.classes && typeof freshness.classes === "object"
+      ? Object.entries(freshness.classes).filter(
+          (e): e is [string, number] => typeof e[1] === "number",
+        )
+      : [];
+  const maxAge = Math.max(1, ...classes.map(([, v]) => v));
+  const claims = (summary?.claims ?? {}) as Record<string, unknown>;
+  const autopsy = (summary?.autopsy ?? {}) as Record<string, unknown>;
   return (
     <div className="pol-grid">
       <div className="codeblk">
-        <code data-testid="policy-yaml">
-          {summary ? JSON.stringify(summary, null, 2) : "loading…"}
-        </code>
+        <code data-testid="policy-yaml">{raw ?? "loading…"}</code>
       </div>
       <div className="comp">
         <div className="crow2">
           <b>Mode</b>
           <div className="cv">
             <ModeSeg mode={mode} onMode={onMode} />
-            <p style={{ marginTop: 8 }} data-testid="policy-mode">
-              mode: <b>{mode || "unknown"}</b>
+            <p style={{ marginTop: 8 }} data-testid="policy-mode" id="mode-desc">
+              {mode ? MODE_DESC[mode] ?? `mode: ${mode}` : "mode unknown"}
             </p>
-            {mode && MODE_DESC[mode] && <p>{MODE_DESC[mode]}</p>}
           </div>
         </div>
         <div className="crow2">
-          <b>Deny kill-list</b>
-          <div className="cv" data-testid="deny-chips">
-            {killList.length > 0 ? (
-              killList.map((d) => (
-                <span key={d} className="chip r">
-                  {d}
+          <b>Budget</b>
+          <div className="cv">
+            {maxTokens !== null ? (
+              <>
+                <span className="m">
+                  {maxTokens.toLocaleString("en-US")} ctx tokens
+                  {maxChunks !== null ? ` · ${maxChunks} chunks` : ""}
                 </span>
+                <div className="gauge">
+                  <i
+                    data-testid="budget-gauge"
+                    style={{ transform: "scaleX(0.99)" }}
+                  />
+                </div>
+              </>
+            ) : (
+              <span className="gcap">No budget reported by this sidecar.</span>
+            )}
+          </div>
+        </div>
+        <div className="crow2">
+          <b>Freshness</b>
+          <div className="cv">
+            {classes.length > 0 ? (
+              classes.map(([name, hours]) => (
+                <div className="fbar" key={name}>
+                  <span>{name}</span>
+                  <div className="tr">
+                    <i style={{ transform: `scaleX(${hours / maxAge})` }} />
+                  </div>
+                  <span className="hrs">{hours} h</span>
+                </div>
               ))
             ) : (
-              <span className="lede">kill-list empty</span>
+              <span className="gcap">No freshness classes reported.</span>
             )}
+          </div>
+        </div>
+        <div className="crow2">
+          <b>Kill list</b>
+          <div className="cv" data-testid="deny-chips" id="deny-chips">
+            <div className="dchips">
+              {killList.length > 0 ? (
+                killList.map((d) => (
+                  <span key={d} className="chip r">
+                    <span className="dot"></span>
+                    {d}
+                  </span>
+                ))
+              ) : (
+                <span className="lede">kill-list empty</span>
+              )}
+            </div>
+            <span
+              className="gcap"
+              style={{ display: "block", marginTop: 7 }}
+            >
+              denied domains hard-block before any model call · updated live
+              from §04.
+            </span>
+          </div>
+        </div>
+        <div className="crow2">
+          <b>Hook</b>
+          <div className="cv">
+            <div className="hookstrip">
+              <span className="h">PreAuth</span>
+              <span className="a">→</span>
+              <span className="h">Pre</span>
+              <span className="a">→</span>
+              <span className="h cur">PreRequest · curator</span>
+              <span className="a">→</span>
+              <span className="h">provider + fallbacks</span>
+              <span className="a">→</span>
+              <span className="h">PostLLM · persist</span>
+              <span className="a">→</span>
+              <span className="h">x-cc-decision-id</span>
+            </div>
           </div>
         </div>
         <div className="crow2">
           <b>Claims</b>
           <div className="cv">
-            {summary?.claims ? (
-              <span className="m">{JSON.stringify(summary.claims)}</span>
+            {Object.keys(claims).length > 0 ? (
+              <span className="m">{JSON.stringify(claims)}</span>
             ) : (
-              <span className="lede">
-                Claim extraction is not configured.
-              </span>
+              <span className="lede">Claim extraction is not configured.</span>
             )}
           </div>
         </div>
         <div className="crow2">
           <b>Autopsy</b>
           <div className="cv">
-            {summary?.autopsy ? (
-              <span className="m">{JSON.stringify(summary.autopsy)}</span>
+            {Object.keys(autopsy).length > 0 ? (
+              <span className="m">{JSON.stringify(autopsy)}</span>
             ) : (
-              <span className="lede">Replay is unavailable.</span>
+              <span className="lede">
+                Replay is unavailable: the sidecar has no gateway replayer
+                configured.
+              </span>
             )}
           </div>
         </div>
@@ -132,6 +218,7 @@ export default function PolicySection({
 }) {
   const [mode, setMode] = useState("");
   const [summary, setSummary] = useState<PolicySummary | null>(null);
+  const [raw, setRaw] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = async () => {
@@ -141,11 +228,19 @@ export default function PolicySection({
       setMode(
         (s.effective_mode as string) || (s.mode as string) || "",
       );
+      try {
+        const t = await api.policyText();
+        setRaw(t.raw);
+        setMode((m) => m || t.mode);
+      } catch {
+        // Raw YAML is a nicety; structured summary already loaded.
+      }
       setError(null);
     } catch (e: unknown) {
       // Older sidecars have no /policy/summary yet: fall back to raw YAML.
       try {
         const t = await api.policyText();
+        setRaw(t.raw);
         setMode(t.mode);
         setError(null);
       } catch (e2: unknown) {
@@ -179,6 +274,7 @@ export default function PolicySection({
     <PolicyView
       mode={mode}
       summary={summary}
+      raw={raw}
       denied={denied}
       onMode={(m) => void setPolicyMode(m)}
     />

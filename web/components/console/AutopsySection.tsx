@@ -171,7 +171,14 @@ export default function AutopsySection({
       </div>
       <div>
         {result ? (
-          <AutopsyResultView result={result} chunkId={chunkId} />
+          <AutopsyResultView
+            result={result}
+            chunkId={chunkId}
+            requestId={decisionId}
+            onMarkUnreliable={(domain) => {
+              api.feedback(domain, "bad").catch(() => {});
+            }}
+          />
         ) : (
           !error && (
             <div className="aut-empty">

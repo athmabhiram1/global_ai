@@ -1,13 +1,23 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { JSX } from "react";
 import { useDecisions, useReputation } from "../../lib/hooks";
+import { api } from "../../lib/api";
 import Drawer from "./Drawer";
 import TracesSection from "./Traces";
 import AutopsySection from "./AutopsySection";
 import SourcesSection from "./Sources";
 import PolicySection from "./Policy";
 import { OverviewKPIs, MeasuredStrip } from "./Overview";
+
+const RAIL_ICONS: Record<string, JSX.Element> = {
+  "ov-overview": (<svg className="ic" viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5" /><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5" /><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5" /><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5" /></svg>),
+  "ov-traces": (<svg className="ic" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16" /></svg>),
+  "ov-autopsy": (<svg className="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M12 4v16" /></svg>),
+  "ov-sources": (<svg className="ic" viewBox="0 0 24 24"><path d="M4 19V5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z" /><path d="M4 19a2 2 0 0 0 2 2h13" /></svg>),
+  "ov-policy": (<svg className="ic" viewBox="0 0 24 24"><path d="M4 8h10M18 8h2M4 16h2M10 16h10" /><circle cx="15" cy="8" r="2.2" /><circle cx="7" cy="16" r="2.2" /></svg>),
+};
 
 const SECTIONS = [
   { id: "ov-overview", no: "01", label: "Overview" },
@@ -59,9 +69,11 @@ function ScopeFilter({
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       >
+        <svg className="ic" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" /></svg>
         <span id="scope-label">
           {value === "all" ? "all policies" : value}
         </span>
+        <svg className="ic" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" /></svg>
       </button>
       <div className={`menu${open ? " open" : ""}`} id="scope-menu" role="listbox">
         <div className="mh">policy scope</div>
@@ -175,6 +187,7 @@ export default function Shell() {
       if (e.key === "Escape") {
         setPalOpen(false);
         setModalOpen(false);
+        closeDecision();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -199,14 +212,25 @@ export default function Shell() {
     }
   }, [palOpen]);
 
+  const setModeFromPalette = (m: "annotate" | "rewrite" | "block") => {
+    smoothTo("ov-policy");
+    setTimeout(() => {
+      const b = document.querySelector<HTMLButtonElement>(
+        `.seg [data-mode="${m}"]`,
+      );
+      if (b) b.click();
+      else toast(`policy mode → ${m}`);
+    }, 400);
+  };
+
   const palItems: PalItem[] = useMemo(() => {
     const items: PalItem[] = [];
     items.push(
-      { g: "Navigate", label: "01 · Overview", d: "ov-overview", run: () => smoothTo("ov-overview") },
-      { g: "Navigate", label: "02 · Admission traces", d: "ov-traces", run: () => smoothTo("ov-traces") },
-      { g: "Navigate", label: "03 · Autopsy — counterfactual proof", d: "ov-autopsy", run: () => smoothTo("ov-autopsy") },
-      { g: "Navigate", label: "04 · Source reputation", d: "ov-sources", run: () => smoothTo("ov-sources") },
-      { g: "Navigate", label: "05 · Policy — resolved config", d: "ov-policy", run: () => smoothTo("ov-policy") },
+      { g: "Navigate", label: "01 · Overview", d: "G 1", run: () => smoothTo("ov-overview") },
+      { g: "Navigate", label: "02 · Admission traces", d: "G 2", run: () => smoothTo("ov-traces") },
+      { g: "Navigate", label: "03 · Autopsy — counterfactual proof", d: "G 3", run: () => smoothTo("ov-autopsy") },
+      { g: "Navigate", label: "04 · Source reputation", d: "G 4", run: () => smoothTo("ov-sources") },
+      { g: "Navigate", label: "05 · Policy — resolved config", d: "G 5", run: () => smoothTo("ov-policy") },
     );
     (scoped || []).slice(0, 10).forEach((d) =>
       items.push({
@@ -219,7 +243,36 @@ export default function Shell() {
         },
       }),
     );
+    (["annotate", "rewrite", "block"] as const).forEach((m) =>
+      items.push({
+        g: "Actions",
+        label: `Set policy mode → ${m}`,
+        d: "",
+        run: () => setModeFromPalette(m),
+      }),
+    );
     items.push(
+      {
+        g: "Actions",
+        label: "Deny content-farm.example",
+        d: "hard block",
+        run: () => {
+          api
+            .deny("content-farm.example", true)
+            .then(() => {
+              reputation.refresh();
+              toast("content-farm.example hard-denied — enforced before any model call", "bad");
+            })
+            .catch(() => toast("deny failed — sidecar unreachable", "bad"));
+          smoothTo("ov-sources");
+        },
+      },
+      {
+        g: "Actions",
+        label: "Reset layout of the hero graph",
+        d: "",
+        run: () => toast("layout reset"),
+      },
       { g: "Actions", label: "Connect real backend…", d: "CC_ADMIN_TOKEN", run: () => setModalOpen(true) },
       { g: "Actions", label: "Retry ledger fetch", d: "", run: () => decisions.refresh() },
     );
@@ -275,7 +328,8 @@ export default function Shell() {
               </button>
             )}
             <button id="btn-k" onClick={() => setPalOpen(true)} aria-label="Command palette">
-              ⌘K
+              <svg className="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
+              <kbd>⌘K</kbd>
             </button>
           </div>
         </div>
@@ -291,7 +345,7 @@ export default function Shell() {
               title={s.label}
               onClick={() => smoothTo(s.id)}
             >
-              {s.label.slice(0, 2)}
+              {RAIL_ICONS[s.id]}
             </button>
           ))}
           <div className="rsep"></div>
@@ -300,7 +354,7 @@ export default function Shell() {
             title="Connect backend"
             onClick={() => setModalOpen(true)}
           >
-            ⇔
+            <svg className="ic" viewBox="0 0 24 24"><path d="M9 7l-4 5 4 5M15 7l4 5-4 5" /></svg>
           </button>
         </aside>
 
@@ -346,7 +400,7 @@ export default function Shell() {
               and per-claim freshness. Live traffic is polled at ~5 s
               intervals.
             </p>
-            <TracesSection rows={scoped} onOpen={openDecision} />
+            <TracesSection rows={scoped} total={rows?.length ?? 0} onOpen={openDecision} />
             <div className="measured">
               <span className="tag">Eval · 50 questions</span>
               <span>
@@ -434,7 +488,9 @@ export default function Shell() {
           <div className="p-scrim" onClick={() => setPalOpen(false)} />
           <div className="p-box" role="dialog" aria-label="Command palette">
             <div className="p-in">
+              <svg viewBox="0 0 24 24" className="ic"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
               <input
+                id="pal-in"
                 ref={palInput}
                 value={palQ}
                 onChange={(e) => {
@@ -453,10 +509,13 @@ export default function Shell() {
                   }
                 }}
                 placeholder="Search decisions, jump to sections, run actions…"
+                autoComplete="off"
+                spellCheck={false}
                 aria-label="Go to section"
               />
+              <kbd>esc</kbd>
             </div>
-            <div className="p-list">
+            <div className="p-list" id="pal-list">
               {palFiltered.length === 0 && (
                 <div className="p-none">No results for “{palQ}”.</div>
               )}
@@ -475,9 +534,11 @@ export default function Shell() {
                       {head}
                       <div
                         className={`p-item${i === palSel ? " sel" : ""}`}
+                        data-i={i}
                         onClick={() => palRun(i)}
                         onMouseMove={() => setPalSel(i)}
                       >
+                        <span className="pi">⌘</span>
                         <span className="pl">{it.label}</span>
                         <span className="pd">{it.d}</span>
                       </div>
@@ -503,34 +564,69 @@ export default function Shell() {
             <button className="m-close" onClick={() => setModalOpen(false)}>
               ✕
             </button>
-            <h3>Connect your sidecar</h3>
+            <h3>Wire this console to the real sidecar</h3>
             <p className="msub">
-              The console talks to the sidecar through{" "}
-              <span className="mono">/api/cc/*</span>, which injects{" "}
-              <span className="mono">CC_ADMIN_TOKEN</span> server-side. The
-              browser never sees the token.
+              Everything renders through one adapter (<span className="mono">CC</span> in the source). The mocks already return the exact
+              shapes documented in <span className="mono">docs/ARCHITECTURE.md §6 / §14</span> — going live is a config change, not a rewrite.
             </p>
             <div className="m-step">
               <span className="n">1</span>
               <div>
-                <h5>Point the proxy at your host</h5>
+                <h5>Point the adapter at your sidecar</h5>
                 <p>
-                  Set <b>CC_SIDECAR_URL</b> to your sidecar origin (default{" "}
-                  <b>http://127.0.0.1:8090</b>) and{" "}
-                  <b>CC_ADMIN_TOKEN</b> to the same token the sidecar runs
-                  with.
+                  Serve this console from the sidecar <b>root</b> or set{" "}
+                  <b>CC_SIDECAR_URL</b> to your sidecar origin (default{" "}
+                  <b>http://127.0.0.1:8090</b>) with the same{" "}
+                  <b>CC_ADMIN_TOKEN</b>.
                 </p>
               </div>
             </div>
             <div className="m-step">
               <span className="n">2</span>
               <div>
+                <h5>Keep the token server-side</h5>
+                <p>
+                  The browser calls <b>/api/cc/*</b>; the route handler injects{" "}
+                  <b>Authorization: Bearer &lt;CC_ADMIN_TOKEN&gt;</b>. The token
+                  never ships to the client.
+                </p>
+              </div>
+            </div>
+            <div className="m-step">
+              <span className="n">3</span>
+              <div>
                 <h5>Send a chat through Bifrost</h5>
                 <p>
                   Decisions appear in <b>§02 traces</b> as rows are written to
-                  the ledger.
+                  the ledger via <b>PostLLMHook</b>.
                 </p>
               </div>
+            </div>
+            <div className="m-code">
+              <button
+                className="btn xs"
+                id="btn-copy"
+                style={{ position: "absolute", top: 10, right: 10 }}
+                onClick={() => {
+                  const txt = document.getElementById("cfg-snippet")?.innerText || "";
+                  const done = () => toast("integration snippet copied", "ok");
+                  if (navigator.clipboard?.writeText) {
+                    navigator.clipboard.writeText(txt).then(done, done);
+                  } else {
+                    done();
+                  }
+                }}
+              >
+                Copy
+              </button>
+              <pre id="cfg-snippet">{`CC_SIDECAR_URL=http://127.0.0.1:8090
+CC_ADMIN_TOKEN=<same token the sidecar runs with>
+
+GET  /api/context-curator/decisions
+GET  /api/context-curator/decisions/:id
+GET  /api/context-curator/reputation
+POST /api/context-curator/feedback   {domain, verdict}
+POST /api/context-curator/autopsy    {request_id, chunk_id}`}</pre>
             </div>
           </div>
         </div>

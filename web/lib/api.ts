@@ -147,6 +147,10 @@ export interface AutopsyResult {
   attribution?: string;
   chunk_domain?: string;
   chunk_tokens?: number;
+  // Narrative fields the sidecar may add later; rendered only when present,
+  // never fabricated from other fields.
+  quote?: string;
+  verdict?: string;
 }
 
 export interface Claim {

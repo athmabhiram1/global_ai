@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import type { DecisionListItem } from "../../lib/api";
 import { ledgerStats } from "./Overview";
 
@@ -10,6 +11,7 @@ const HOOK_STAGES = [
   "hard-deny",
   "score",
   "refresh",
+  "cluster",
   "select · MMR",
   "rewrite ✓ committed",
 ];
@@ -55,18 +57,21 @@ function HookLive() {
 
 export function TracesTable({
   rows,
+  total,
   onOpen,
 }: {
   rows: DecisionListItem[];
+  total?: number;
   onOpen: (id: string) => void;
 }) {
   const mode = rows.length > 0 ? rows[0].mode : "rewrite";
+  const all = total ?? rows.length;
   return (
     <div className="panel">
       <div className="panel-h">
         <b>decisions</b>
         <span className="cnt" id="led-count">
-          {rows.length} of {rows.length} rows
+          {rows.length} of {all} rows
         </span>
         <div className="right">
           <span className="chip" id="mode-banner">
@@ -85,8 +90,42 @@ export function TracesTable({
         <span style={{ textAlign: "right" }}>Status</span>
       </div>
       <div className="tbody" id="ledger-body" role="list" tabIndex={0}>
+        {rows.length === 0 && (
+          <p className="lede" style={{ padding: "16px 15px" }}>
+            No admissions recorded yet.
+          </p>
+        )}
         {rows.map((d) => {
           const killed = d.cin - d.cout;
+          const delta = d.tin ? Math.round((1 - d.tout / d.tin) * 100) : 0;
+          let st: ReactNode;
+          if (d.mode === "block" && d.cin > 0 && d.cout === 0) {
+            st = (
+              <span className="r">
+                <span className="dot"></span>blocked
+              </span>
+            );
+          } else {
+            st = (
+              <>
+                <span className="g">
+                  <span className="dot"></span>
+                  {d.cout} kept
+                </span>
+                {killed > 0 && (
+                  <span className="r">
+                    <span className="dot"></span>
+                    {killed} killed
+                  </span>
+                )}
+                {d.mode === "annotate" && (
+                  <span className="a">
+                    <span className="dot"></span>annotated
+                  </span>
+                )}
+              </>
+            );
+          }
           return (
             <div
               key={d.id}
@@ -106,31 +145,25 @@ export function TracesTable({
               </span>
               <span className="lhide">{d.policy}</span>
               <span>
+                {d.cin}
+                <span className="arr">→</span>
                 <span className="kept">{d.cout}</span>
-                <span className="arr">/{d.cin}</span>
               </span>
               <span>
-                {d.tin}→{d.tout}
+                {d.tin}
+                <span className="arr">→</span>
+                {d.tout}
+                <b
+                  className={`dlt${delta <= 0 ? " zero" : ""}`}
+                  style={{ marginLeft: 4 }}
+                >
+                  {delta > 0 ? `−${delta}%` : "±0%"}
+                </b>
               </span>
-              <span className="lhide lhide2">{d.cred}</span>
+              <span className="lhide lhide2">{d.cred || "·"}</span>
               <span className="lhide lhide2">{d.ms} ms</span>
               <span className="st" style={{ justifyContent: "flex-end" }}>
-                {d.reasons.length > 0 ? (
-                  <span className="a">
-                    <span className="dot"></span>
-                    {d.reasons[0]}
-                  </span>
-                ) : (
-                  <span className="g">
-                    <span className="dot"></span>admitted
-                  </span>
-                )}
-                {killed > 0 && (
-                  <span className="r">
-                    <span className="dot"></span>
-                    {killed} killed
-                  </span>
-                )}
+                {st}
               </span>
             </div>
           );
@@ -227,19 +260,27 @@ export function TracesTelemetry({ rows }: { rows: DecisionListItem[] }) {
 
 export default function TracesSection({
   rows,
+  total,
   onOpen,
 }: {
   rows: DecisionListItem[] | null;
+  total?: number;
   onOpen: (id: string) => void;
 }) {
-  if (rows === null) return <p className="lede">Loading…</p>;
-  if (rows.length === 0)
-    return <p className="lede">No admissions recorded yet.</p>;
+  if (rows === null) {
+    return (
+      <>
+        <TracesTelemetry rows={[]} />
+        <TracesTable rows={[]} total={0} onOpen={onOpen} />
+        <p className="lede">Loading…</p>
+      </>
+    );
+  }
 
   return (
     <>
       <TracesTelemetry rows={rows} />
-      <TracesTable rows={rows} onOpen={onOpen} />
+      <TracesTable rows={rows} total={total ?? rows.length} onOpen={onOpen} />
     </>
   );
 }
