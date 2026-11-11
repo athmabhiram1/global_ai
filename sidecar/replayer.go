@@ -52,10 +52,11 @@ func (g *GatewayReplayer) Replay(ctx context.Context, req string, dropChunk stri
 		for _, msg := range msgs {
 			if dropChunk != "" {
 				if fields, ok := msg.(map[string]any); ok {
-					if id, ok := fields["chunk_id"].(string); ok && id != "" && id == dropChunk {
-						continue
-					}
-					if content, ok := fields["content"].(string); ok && strings.Contains(content, dropChunk) {
+					if id, ok := fields["chunk_id"].(string); ok && id != "" {
+						if id == dropChunk {
+							continue
+						}
+					} else if content, ok := fields["content"].(string); ok && strings.Contains(content, dropChunk) {
 						continue
 					}
 				}
