@@ -23,6 +23,9 @@ export const metadata: Metadata = {
   title: "Context Curator — Admission Control for LLM Context",
   description:
     "A native Bifrost plugin that performs admission control on context. Authority, freshness, independence, learned utility — with a causal proof for every decision.",
+  icons: {
+    icon: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230A0B0D'/%3E%3Cpath d='M16 5 L26 11 V21 L16 27 L6 21 V11 Z' fill='none' stroke='%234CC2FF' stroke-width='2.4'/%3E%3Cpath d='M11.5 16.5 L14.5 19.5 L21 12.5' fill='none' stroke='%234CC2FF' stroke-width='2.4'/%3E%3C/svg%3E",
+  },
 };
 
 export default function RootLayout({
