@@ -48,6 +48,7 @@ func main() {
 	}
 
 	api := NewServer(st, os.Getenv("CC_ADMIN_TOKEN"), policyJSON)
+	api.Replayer = replayerFromEnv()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {

@@ -101,6 +101,10 @@ func (s *Server) handleAutopsy(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, http.StatusBadRequest, "invalid autopsy request")
 		return
 	}
+	if req.RequestID == "" || req.ChunkID == "" {
+		s.writeErr(w, http.StatusBadRequest, "request_id and chunk_id required")
+		return
+	}
 	res, err := s.Autopsy(r.Context(), req)
 	if err != nil {
 		if errors.Is(err, errAutopsyNotFound) || isNotFoundErr(err) {

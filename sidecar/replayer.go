@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
@@ -118,4 +119,16 @@ func replayChoiceText(content any) string {
 	default:
 		return ""
 	}
+}
+
+// replayerFromEnv wires the production GatewayReplayer: the in-container
+// gateway by default (BIFROST_URL overrides), Bearer CC_GATEWAY_TOKEN when set.
+// Missing this wiring was a production 500 on every autopsy call: NewServer
+// leaves Replayer nil and the unit tests inject a stub, so nothing caught it.
+func replayerFromEnv() *GatewayReplayer {
+	base := strings.TrimSpace(os.Getenv("BIFROST_URL"))
+	if base == "" {
+		base = "http://127.0.0.1:8080"
+	}
+	return NewGatewayReplayer(base, strings.TrimSpace(os.Getenv("CC_GATEWAY_TOKEN")))
 }
