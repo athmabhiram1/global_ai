@@ -309,3 +309,13 @@ Total runtime: under 90 seconds, no narration required.
 | Scope | **Cross-app learning stays; MCP and policy editor cut** | Learning is the strongest differentiator |
 | AI surface | **Off-path claim extraction + autopsy attribution** | Satisfies the "Use of AI" criterion without polluting the decision path |
 | Demo providers | **Real OpenAI + deterministic mock** | Authenticity plus reproducibility |
+
+## 19. Rev 3 correction — hook contract
+
+§7 (`Init`, `GetName`, `PreRequestHook`, `PreLLMHook`, `PostLLMHook`, `Cleanup`) and the §18 Hook row describe the
+original plan. As built, content modification lives in **`PreRequestHook`** (runs once per top-level request,
+before routing and every fallback attempt), recording in **`PostLLMHook`**, with header correlation via
+`HTTPTransportPreHook`/`HTTPTransportResponseHeadersHook` (`plugin/bypass.go`, `plugin/correlate.go`). There is no
+`PreLLMHook` symbol in `plugin/` — it was deliberately omitted because it re-runs per fallback attempt and would
+double-spend Tavily credits. This keeps the "no fork, standard installation" claim intact; only the hook names in
+§7/§18 were stale.
