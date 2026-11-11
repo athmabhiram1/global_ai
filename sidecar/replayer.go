@@ -36,10 +36,12 @@ func NewGatewayReplayer(baseURL, token string) *GatewayReplayer {
 	}
 }
 
-// Replay re-sends req with every message whose content contains dropChunk
-// removed, at temperature 0, and returns the concatenated choices text. A
-// non-2xx provider status is an error: autopsy must never score silence as
-// "no influence". An empty dropChunk removes nothing.
+// Replay re-sends req with every message belonging to dropChunk removed, at
+// temperature 0, and returns the concatenated choices text. Removal is by
+// exact chunk_id match first; messages without a chunk_id (old rows, and the
+// frozen test fixture) fall back to the "content contains dropChunk" rule.
+// A non-2xx provider status is an error: autopsy must never score silence
+// as "no influence". An empty dropChunk removes nothing.
 func (g *GatewayReplayer) Replay(ctx context.Context, req string, dropChunk string) (string, error) {
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(req), &payload); err != nil {
@@ -50,6 +52,9 @@ func (g *GatewayReplayer) Replay(ctx context.Context, req string, dropChunk stri
 		for _, msg := range msgs {
 			if dropChunk != "" {
 				if fields, ok := msg.(map[string]any); ok {
+					if id, ok := fields["chunk_id"].(string); ok && id != "" && id == dropChunk {
+						continue
+					}
 					if content, ok := fields["content"].(string); ok && strings.Contains(content, dropChunk) {
 						continue
 					}

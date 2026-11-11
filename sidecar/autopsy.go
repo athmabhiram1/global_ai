@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/athmabhiram/context-curator/plugin/model"
 )
 
 // Autopsy ablation budget: at most 5 ablations per call. This method ablates
@@ -43,15 +45,11 @@ func (s *Server) Autopsy(ctx context.Context, req AutopsyRequest) (*AutopsyResul
 		}
 	}
 	if !kept {
-		for _, drop := range decision.Dropped {
-			if drop.ID == req.ChunkID {
-				kept = true
-				break
-			}
-		}
-	}
-	if !kept {
-		return nil, fmt.Errorf("autopsy: chunk %q is not among request %q kept and dropped ids", req.ChunkID, req.RequestID)
+		// Retained-only: a dropped chunk is absent from the recorded
+		// post-rewrite request, so ablating it would remove nothing and
+		// score a fake zero. Reject it instead of pretending to ablate.
+		return nil, fmt.Errorf("autopsy: chunk %q was not retained in request %q: %w",
+			req.ChunkID, req.RequestID, errAutopsyNotFound)
 	}
 	if cached, createdAt, found, err := s.Store.GetAutopsy(ctx, req.RequestID, req.ChunkID); err != nil {
 		return nil, err
@@ -75,11 +73,34 @@ func (s *Server) Autopsy(ctx context.Context, req AutopsyRequest) (*AutopsyResul
 		return nil, fmt.Errorf("autopsy: replay without chunk: %w", err)
 	}
 	diff := SentenceDiff(with, without)
+	withSent, _ := splitDiffSentences(with)
+	withoutSent, _ := splitDiffSentences(without)
+	if withSent == nil {
+		withSent = []string{}
+	}
+	if withoutSent == nil {
+		withoutSent = []string{}
+	}
+	domain, tokens := ablatedChunk(decision, req.ChunkID)
+	display := domain
+	if display == "" {
+		display = "chunk " + req.ChunkID
+	}
+	attribution := fmt.Sprintf("%s did not change the answer", display)
+	if len(diff.Changed) > 0 {
+		attribution = fmt.Sprintf("%s mattered: %d/%d changed", display, len(diff.Changed), diff.Total)
+	}
 	res := &AutopsyResult{
-		Influence: Influence(diff),
-		Diff:      diff,
-		With:      with,
-		Without:   without,
+		Influence:        Influence(diff),
+		Diff:             diff,
+		With:             with,
+		Without:          without,
+		WithSentences:    withSent,
+		WithoutSentences: withoutSent,
+		ChangedIndices:   changedIndices(with, without),
+		Attribution:      attribution,
+		ChunkDomain:      domain,
+		ChunkTokens:      tokens,
 	}
 	raw, err := json.Marshal(res)
 	if err != nil {
@@ -122,7 +143,40 @@ var errAutopsyNotFound = errors.New("autopsy: not found")
 func isNotFoundErr(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, "not among") ||
+		strings.Contains(msg, "not retained") ||
 		strings.Contains(msg, "no rows") ||
 		strings.Contains(msg, "not found") ||
 		strings.Contains(msg, "unknown")
+}
+
+// ablatedChunk returns the recorded domain and token count for one kept
+// chunk. Old rows persist no Chunks JSON, so a missing record degrades to an
+// empty domain and zero tokens rather than an error.
+func ablatedChunk(d model.Decision, chunkID string) (string, int) {
+	for _, c := range d.Chunks {
+		if c.ID == chunkID {
+			return c.Domain, c.Tokens
+		}
+	}
+	return "", 0
+}
+
+// changedIndices marks the with-side sentence slots that pair into a Changed
+// entry: it replays the SentenceDiff anchor walk and collects the with-side
+// indices of each paired gap. Empty comparisons yield an empty slice, never
+// nil, so the JSON stays an array.
+func changedIndices(a, b string) []int {
+	rawA, normA := splitDiffSentences(a)
+	rawB, normB := splitDiffSentences(b)
+	anchors := append(lcsAlignPairs(normA, normB), [2]int{len(rawA), len(rawB)})
+	out := []int{}
+	prevA, prevB := 0, 0
+	for _, anchor := range anchors {
+		paired := min(len(rawA[prevA:anchor[0]]), len(rawB[prevB:anchor[1]]))
+		for k := range paired {
+			out = append(out, prevA+k)
+		}
+		prevA, prevB = anchor[0]+1, anchor[1]+1
+	}
+	return out
 }

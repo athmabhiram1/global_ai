@@ -37,13 +37,22 @@ type AutopsyRequest struct {
 	ChunkID   string `json:"chunk_id"`
 }
 
-// AutopsyResult is the cached outcome of one ablation pair.
+// AutopsyResult is the cached outcome of one ablation pair. The sentence
+// arrays render the two memos side by side; ChangedIndices marks the
+// with-side sentences that a retained chunk influenced; Attribution names the
+// ablated chunk's domain; ChunkDomain/ChunkTokens describe that chunk.
 type AutopsyResult struct {
-	Influence float64 `json:"influence"`
-	Diff      Diff    `json:"diff"`
-	With      string  `json:"with"`
-	Without   string  `json:"without"`
-	Cached    bool    `json:"cached"`
+	Influence        float64  `json:"influence"`
+	Diff             Diff     `json:"diff"`
+	With             string   `json:"with"`
+	Without          string   `json:"without"`
+	Cached           bool     `json:"cached"`
+	WithSentences    []string `json:"with_sentences"`
+	WithoutSentences []string `json:"without_sentences"`
+	ChangedIndices   []int    `json:"changed_indices"`
+	Attribution      string   `json:"attribution"`
+	ChunkDomain      string   `json:"chunk_domain"`
+	ChunkTokens      int      `json:"chunk_tokens"`
 }
 
 // Claim is one extracted assertion with its freshness evidence.
