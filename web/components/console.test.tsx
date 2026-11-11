@@ -20,8 +20,7 @@ afterEach(() => {
 });
 
 describe("ChunkCard", () => {
-  it("renders domain, authority, freshness, age, tokens, cluster, provenance, refresh + 5 scores", () => {
-    render(
+  it("renders domain, authority, freshness, age, tokens, cluster, provenance, refresh + 5 scores", () => {    render(
       <ChunkCard
         chunk={{
           id: "c1",
@@ -137,6 +136,7 @@ describe("Policy mode", () => {
           effective_mode: "rewrite",
           authority: { deny: ["content-farm.example"] },
         }}
+        raw={null}
         denied={["evil.example"]}
         onMode={() => {}}
       />,
@@ -155,5 +155,118 @@ describe("Autopsy cache honesty", () => {
     expect(screen.getByLabelText("Autopsy result for c1").textContent).toContain(
       "60 min",
     );
+  });
+});
+
+describe("Template parity: drawer chunk score bars", () => {
+  it("renders the weighted ck-bar with one segment per score component", () => {
+    render(
+      <ChunkCard
+        chunk={{
+          id: "c1",
+          dom: "docs.example.com",
+          verdict: "keep",
+          score: 0.82,
+          record: chunkRecordFixture,
+        }}
+        onAutopsy={() => {}}
+      />,
+    );
+    const bar = document.querySelector(".ck-bar");
+    expect(bar).toBeTruthy();
+    expect(bar!.querySelectorAll("i").length).toBe(5);
+  });
+});
+
+describe("Template parity: autopsy proof block", () => {
+  it("renders aut-log replay lines, quote, verdict, actions and meta", () => {
+    const onUnreliable = vi.fn();
+    render(
+      <AutopsyResultView
+        result={{
+          ...autopsyFixture,
+          quote: "It wasn't the model. It was chunk c1.",
+          verdict: "Removing c1 flips the price sentence.",
+        }}
+        chunkId="c1"
+        requestId="rq-1"
+        onMarkUnreliable={onUnreliable}
+      />,
+    );
+    expect(document.querySelector("#aut-log")?.textContent).toContain("rq-1");
+    expect(document.querySelector("#aut-log")?.textContent).toContain("c1");
+    expect(document.querySelector("#aut-quote")?.textContent).toContain(
+      "It wasn't the model.",
+    );
+    expect(document.querySelector("#aut-verdict")?.textContent).toContain(
+      "flips the price",
+    );
+    expect(document.querySelector("#aut-changed")?.textContent).toContain(
+      "1 / 4 sentences changed",
+    );
+    expect(document.querySelector("#aut-meta")?.textContent).toContain("320");
+    fireEvent.click(screen.getByTestId("mark-unreliable"));
+    expect(onUnreliable).toHaveBeenCalledWith("docs.example.com");
+  });
+
+  it("omits quote/verdict when the sidecar did not return them (no fake text)", () => {
+    render(<AutopsyResultView result={autopsyFixture} chunkId="c1" />);
+    expect(document.querySelector("#aut-quote")).toBeNull();
+    expect(document.querySelector("#aut-verdict")).toBeNull();
+  });
+});
+
+describe("Template parity: policy surface", () => {
+  const summary = {
+    effective_mode: "rewrite",
+    budget: { max_context_tokens: 4000, max_chunks: 8 },
+    freshness: { classes: { price: 24, law: 168 } },
+    authority: { deny: ["content-farm.example"] },
+    claims: {},
+    autopsy: {},
+  };
+
+  it("renders raw YAML in the codeblk, not JSON", () => {
+    render(
+      <PolicyView
+        mode="rewrite"
+        summary={summary}
+        raw="context_curator:\n  mode: rewrite\n"
+        denied={[]}
+        onMode={() => {}}
+      />,
+    );
+    const code = screen.getByTestId("policy-yaml");
+    expect(code.textContent).toContain("mode: rewrite");
+    expect(code.textContent).not.toContain('"effective_mode"');
+  });
+
+  it("renders the budget gauge, freshness bars and hookstrip", () => {
+    render(
+      <PolicyView
+        mode="rewrite"
+        summary={summary}
+        raw="mode: rewrite"
+        denied={[]}
+        onMode={() => {}}
+      />,
+    );
+    expect(document.querySelector(".gauge")).toBeTruthy();
+    expect(document.querySelectorAll(".fbar").length).toBe(2);
+    expect(document.querySelector(".hookstrip")).toBeTruthy();
+  });
+
+  it("treats empty claims/autopsy sections as unconfigured, not '{}'", () => {
+    render(
+      <PolicyView
+        mode="rewrite"
+        summary={summary}
+        raw="mode: rewrite"
+        denied={[]}
+        onMode={() => {}}
+      />,
+    );
+    expect(screen.getByText(/Claim extraction is not configured/)).toBeTruthy();
+    expect(screen.getByText(/Replay is unavailable/)).toBeTruthy();
   });
 });
