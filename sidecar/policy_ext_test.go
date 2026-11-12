@@ -217,3 +217,34 @@ func TestPolicyModeSummaryRequiresPolicy(t *testing.T) {
 		t.Fatalf("GET policy/summary without policy = %d, want 503", rec.Code)
 	}
 }
+
+func TestDenyNormalizesDomain(t *testing.T) {
+	s := NewServer(openSidecarTestStore(t), "", policyExtTestYAML)
+	rec := postJSON(t, s, "/api/context-curator/deny", `{"domain":"  EVIL.Example. ","denied":true}`, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST deny mixed-case = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	var row map[string]any
+	decodePolicyExtBody(t, rec, &row)
+	if row["Domain"] != "evil.example" {
+		t.Fatalf("deny stored domain = %v, want normalized %q", row["Domain"], "evil.example")
+	}
+	got, err := s.Store.GetReputation(context.Background(), "evil.example")
+	if err != nil {
+		t.Fatalf("GetReputation(normalized) = %v, want row", err)
+	}
+	if !got.Denied {
+		t.Fatal("normalized row Denied = false, want true")
+	}
+}
+
+func TestPolicySummaryHasModeAlias(t *testing.T) {
+	s := NewServer(openSidecarTestStore(t), "", policyExtTestYAML)
+	code, body := getPolicySummary(t, s)
+	if code != http.StatusOK {
+		t.Fatalf("GET policy/summary = %d, want 200", code)
+	}
+	if body["mode"] != body["effective_mode"] {
+		t.Fatalf("summary mode = %v, want alias of effective_mode = %v", body["mode"], body["effective_mode"])
+	}
+}

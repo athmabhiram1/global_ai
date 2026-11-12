@@ -65,11 +65,12 @@ func stashPending(ctx *schemas.BifrostContext, d Decision, req *schemas.BifrostR
 // and every message with its actual text. Each tool message that maps to a
 // kept chunk carries that chunk's ID so autopsy can ablate by chunk_id.
 //
-// Mapping is positional and deterministic because Rewrite pairs kept[k] with
-// the k-th tool message: when the tool count equals the kept count (the
-// post-rewrite shape) the k-th tool message gets keptIDs[k]. Otherwise (the
-// untouched annotate/block shape) the i-th tool message maps to input chunk
-// c<i> when that chunk was kept.
+// Mapping is positional and deterministic because tool messages and input
+// chunks share one numbering: Segment names the i-th tool message's chunk
+// c<i>, and Rewrite pairs kept[k] with the k-th tool message. When the tool
+// count equals the kept count (the post-rewrite shape) the k-th tool message
+// gets keptIDs[k]. Otherwise (the untouched annotate/block shape) the k-th
+// tool message maps to its own input chunk c<k> when that chunk was kept.
 func recordedRequest(req *schemas.BifrostRequest, keptIDs []string) string {
 	type wireMsg struct {
 		Role    string `json:"role"`

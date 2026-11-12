@@ -9,9 +9,9 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
-	"strings"
 	"sync"
 
 	"github.com/athmabhiram/context-curator/plugin/retriever"
@@ -134,15 +134,16 @@ func (s *Server) handlePolicy(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte(s.PolicyJSON))
 }
 
-// requireAuth enforces Bearer CC_ADMIN_TOKEN. Empty Token means open (tests).
+// requireAuth enforces Bearer CC_ADMIN_TOKEN with an exact, constant-time
+// comparison. Empty Token means open (tests).
 func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.Token == "" {
 			next(w, r)
 			return
 		}
-		if !strings.EqualFold(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "), s.Token) ||
-			!strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+		got, want := r.Header.Get("Authorization"), "Bearer "+s.Token
+		if subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
 			s.writeErr(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}

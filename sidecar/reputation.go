@@ -89,11 +89,16 @@ func (s *Server) handleFeedback(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, http.StatusBadRequest, "domain required")
 		return
 	}
+	body.Domain = normalizeDomain(body.Domain)
+	if body.Domain == "" {
+		s.writeErr(w, http.StatusBadRequest, "domain required")
+		return
+	}
 	ctx := r.Context()
 	rep, err := s.Store.GetReputation(ctx, body.Domain)
 	if err != nil {
 		if !errors.Is(err, store.ErrNotFound) {
-			s.writeErr(w, http.StatusInternalServerError, err.Error())
+			s.writeErr(w, http.StatusInternalServerError, "store error")
 			return
 		}
 		rep = priorReputation(body.Domain, time.Now())
@@ -109,7 +114,7 @@ func (s *Server) handleFeedback(w http.ResponseWriter, r *http.Request) {
 	}
 	rep.LastSeen = time.Now()
 	if err := s.Store.SetReputation(ctx, rep); err != nil {
-		s.writeErr(w, http.StatusInternalServerError, err.Error())
+		s.writeErr(w, http.StatusInternalServerError, "store error")
 		return
 	}
 	s.writeJSON(w, http.StatusOK, rep)

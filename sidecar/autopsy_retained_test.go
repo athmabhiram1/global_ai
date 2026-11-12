@@ -64,3 +64,38 @@ func TestAutopsyRetainedEnrichesResult(t *testing.T) {
 		t.Fatalf("influence = %v, want in [0,1]", res.Influence)
 	}
 }
+
+// Cached rows written before enrichment existed carry no sentence fields.
+// Serving them must backfill from the stored answers, never replay and
+// never serve null arrays.
+func TestAutopsyCachedBackfillsEnrichment(t *testing.T) {
+	s := openAutopsyTestServer(t, enrichedDecision(), `{"messages":[]}`)
+	legacy := `{"influence":0.5,"diff":{"changed":["The cat sits -> The dog runs"],"added":[],"removed":[],"total":2},"with":"The cat sits. It is sunny.","without":"The dog runs. It is sunny.","cached":false}`
+	if err := s.Store.SetAutopsy(context.Background(), "req-1", "c1", legacy); err != nil {
+		t.Fatalf("seed legacy cache: %v", err)
+	}
+	fake := &countingReplayer{with: "UNUSED", without: "UNUSED"}
+	s.Replayer = fake
+	res, err := s.Autopsy(context.Background(), AutopsyRequest{RequestID: "req-1", ChunkID: "c1"})
+	if err != nil {
+		t.Fatalf("Autopsy cached: %v", err)
+	}
+	if !res.Cached {
+		t.Fatal("Autopsy cached: Cached = false, want true")
+	}
+	if fake.calls != 0 {
+		t.Fatalf("replayer calls = %d, want 0 (cache hit must not replay)", fake.calls)
+	}
+	if len(res.WithSentences) != 2 || res.WithSentences[0] != "The cat sits" {
+		t.Fatalf("with_sentences = %q, want backfilled [The cat sits, It is sunny]", res.WithSentences)
+	}
+	if len(res.WithoutSentences) != 2 || res.WithoutSentences[0] != "The dog runs" {
+		t.Fatalf("without_sentences = %q, want backfilled [The dog runs, It is sunny]", res.WithoutSentences)
+	}
+	if len(res.ChangedIndices) != 1 || res.ChangedIndices[0] != 0 {
+		t.Fatalf("changed_indices = %v, want backfilled [0]", res.ChangedIndices)
+	}
+	if !strings.Contains(res.Attribution, "example.com") {
+		t.Fatalf("attribution = %q, want backfilled domain", res.Attribution)
+	}
+}

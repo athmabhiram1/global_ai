@@ -59,6 +59,33 @@ func (s *Server) Autopsy(ctx context.Context, req AutopsyRequest) (*AutopsyResul
 			return nil, fmt.Errorf("autopsy: cached result corrupt: %w", err)
 		}
 		res.Cached = true
+		// Backfill rows cached before enrichment existed: recompute the
+		// sentence fields from the stored answers so the API never serves
+		// null arrays. No replay happens here.
+		if len(res.WithSentences) == 0 && res.With != "" {
+			withSent, _ := splitDiffSentences(res.With)
+			withoutSent, _ := splitDiffSentences(res.Without)
+			if withSent == nil {
+				withSent = []string{}
+			}
+			if withoutSent == nil {
+				withoutSent = []string{}
+			}
+			res.WithSentences = withSent
+			res.WithoutSentences = withoutSent
+			res.ChangedIndices = changedIndices(res.With, res.Without)
+			domain, tokens := ablatedChunk(decision, req.ChunkID)
+			display := domain
+			if display == "" {
+				display = "chunk " + req.ChunkID
+			}
+			res.Attribution = fmt.Sprintf("%s did not change the answer", display)
+			if len(res.Diff.Changed) > 0 {
+				res.Attribution = fmt.Sprintf("%s mattered: %d/%d changed", display, len(res.Diff.Changed), res.Diff.Total)
+			}
+			res.ChunkDomain = domain
+			res.ChunkTokens = tokens
+		}
 		return &res, nil
 	}
 	if s.Replayer == nil {
