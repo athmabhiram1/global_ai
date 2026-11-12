@@ -6,6 +6,15 @@ Total runtime target: ~120 s (acceptable range 85–150 s).
 
 One line: *Compression asks how few tokens. We ask which sources are allowed to speak.*
 
+Story (organizer-memory hook): a support agent quotes a WRONG stale price to a REAL
+customer because the gateway forwarded a poisoned blog post without checking its ID —
+then Context Curator plays the bouncer that checks every source's ID at the door.
+Real-incident anchors (context only, never measured claims):
+Air Canada chatbot invented a bereavement fare, tribunal held the airline liable —
+https://www.bbc.com/travel/article/20240222-air-canada-chatbot-misinformation-what-travellers-should-know ;
+Slack AI indirect prompt injection exfiltrated private-channel data via a planted public message —
+https://www.promptarmor.com/resources/data-exfiltration-from-slack-ai-via-indirect-prompt-injection .
+
 ## Setup (before recording)
 
 1. `docker compose up -d --build`; verify `http://localhost:8080/v1/models`, `http://localhost:8090/healthz`, `http://localhost:3000/console`.
@@ -36,8 +45,8 @@ Expected: curated answer echoes the `$49` chunk; `$39` drops as `stale`, content
 
 | TIME | SHOT (exact URL / click) | NARRATION (verbatim) | FALLBACK if live fails |
 |---|---|---|---|
-| 0:00–0:12 | Full-screen title card + terminal showing the gateway receiving a request. Camera: title text "Your agent read a poisoned page." then the tool-result paste scrolling past. | "Your agent searched the web, pasted everything into the prompt, and the gateway forwarded all of it without an opinion." | Pre-recorded 12 s clip of the same scroll (file: `fallback-00-poison.mp4`). On-screen text carries it; no voiceover needed. |
-| 0:12–0:20 | Same terminal: highlight the stale `$39` chunk and the content-farm chunk inside the outgoing request. Camera must show both dollar figures in the request body. | "A stale blog says thirty-nine dollars. A content farm says dealz. The current price is forty-nine — and nobody can say which chunk caused the wrong answer." | Freeze-frame PNG of the request body with `$39` and `content-farm.example` circled (`fallback-12-request.png`). |
+| 0:00–0:12 | Full-screen title card + terminal showing the gateway receiving a request. Camera: title text "Your support agent just quoted the wrong price — to a real customer." then the tool-result paste scrolling past, with corner captions "Air Canada chatbot: invented fare, airline paid" and "Slack AI: planted post read as truth". | "Air Canada's chatbot invented a bereavement fare — and the tribunal made the airline pay. Last summer, another support agent told a real customer their price would double — because it quoted a stale page." | Pre-recorded 12 s clip of the same scroll (file: `fallback-00-poison.mp4`). On-screen text carries it; no voiceover needed. |
+| 0:12–0:20 | Same terminal: highlight the stale `$39` chunk and the content-farm chunk inside the outgoing request. Camera must show both dollar figures in the request body. | "Forty-nine is current. Thirty-nine is a stale blog. Dealz is a poisoned farm post. The gateway forwards all three — no ID check." | Freeze-frame PNG of the request body with `$39` and `content-farm.example` circled (`fallback-12-request.png`). |
 | 0:20–0:32 | Diagram or `docker compose ps` output: one container, three ports. Camera: terminal `docker compose ps` showing `:8080`, `:8090`, `:3000`, then the README architecture block. | "Context Curator is one container. One plugin, sitting in the gateway's request path on port 8080, enforcing one source policy for every app." | Pre-recorded `docker compose ps` output screenshot (`fallback-20-stack.png`). |
 | 0:32–0:45 | Browser `http://localhost:3000/console` → Policy section. Camera must show effective mode (`rewrite`), deny list, freshness classes (price 24 h), min independent sources 2. | "No reranker, no compressor, no LLM on the admission path. Fixed weights, published and tested — the same request and policy always produce the same decision, with a reason code for every drop." | Screenshot of `/console` Policy section with mode + deny list visible (`fallback-32-policy.png`). |
 | 0:45–1:00 | LIVE BEAT 1 — terminal runs the exact curl above against `http://localhost:8080/v1/chat/completions`. Camera must show the command, `mock/mock-model`, and the echoed `$49` answer in the response. | "Watch it live. One chat request through the gateway on port 8080, using the deterministic mock model. The answer comes back forty-nine dollars — the stale thirty-nine never reaches the model." | Pre-recorded terminal run of the same curl with visible `$49` response (`fallback-45-curl.mp4`). |
@@ -46,7 +55,7 @@ Expected: curated answer echoes the `$49` chunk; `$39` drops as `stale`, content
 | 1:22–1:32 | LIVE BEAT 4 — Autopsy tab: run autopsy **with** the retained `$49` chunk, then **without** it (ablate by chunk ID). Camera must show the two memos side by side and the changed-sentence highlight. | "And we can prove it. Autopsy replays the same request with one chunk removed. Remove chunk seven, the sentence flips. It wasn't the model — it was chunk seven." | Pre-recorded autopsy side-by-side diff (`fallback-82-autopsy.mp4`). |
 | 1:32–1:42 | LIVE BEAT 5 — Sources section: click Deny on a domain (e.g. `content-farm.example`); switch to Policy section and show it in the kill list. Camera must show the click and the kill-list row. | "Deny a domain in Sources, and it lands in the Policy kill-list — fleet-wide, on the very next request, for every app behind the gateway." | Pre-recorded deny click → kill-list row (`fallback-92-deny.mp4`). |
 | 1:42–1:52 | MEASURED STRIP — full `examples/eval/results.md` Summary block on screen, held **≥ 4 seconds** (count "one-one-thousand…" to four). Camera: static, whole block legible, no scrolling. Numbers on screen: `0.480 → 1.000 (+52pp)`, `416 → 366 (−12.0%)`, `8 ms → 8 ms`, `50 questions × 3 repeats, deterministic echo mock provider`. | "Measured, not narrated. Fifty questions, three repeats each. Accuracy: zero point four eight zero to one point zero zero zero. Tokens: four-sixteen to three-six-six — twelve percent. Latency: eight milliseconds to eight milliseconds." | Static PNG of the results Summary block held 5 s (`fallback-102-results.png`). |
-| 1:52–2:00 | Closing card over the console. On-screen text: "Compression asks how few tokens. We ask which sources are allowed to speak." | "So the question for your agents is not how much context you can afford. It is which sources you trust to speak." | Title card PNG with the closing line (`fallback-112-close.png`). |
+| 1:52–2:00 | Closing card over the console. On-screen text: "Compression asks how few tokens. We ask which sources are allowed to speak." | "Air Canada paid. Slack patched. Context Curator is the bouncer that checks every source's ID at the door — before the model speaks." | Title card PNG with the closing line (`fallback-112-close.png`). |
 
 ## Camera rules (every claim)
 
@@ -64,3 +73,6 @@ Expected: curated answer echoes the `$49` chunk; `$39` drops as `stale`, content
 4. **No latency-win claims.** Latency is **8 ms → 8 ms** (unchanged). Say "no latency cost", never "faster".
 5. **No accuracy claims beyond the eval.** Accuracy is **0.480 → 1.000 on the 50-question trap set** (must/must-not-contain scoring), not a general benchmark.
 6. **No cross-app magic beyond what is shown.** The deny kill list is fleet-wide for apps behind this gateway; do not claim per-app policies, user accounts, or hosted-Vercel behavior in the live stack.
+7. **No real-incident overclaim.** Air Canada (invented bereavement fare, tribunal liability) and Slack AI (planted public message exfiltrated private data) are context anchors only. Never imply they are our demo data, never imply the 50-question trap set reproduces their facts, and never claim the plugin prevents legal liability.
+8. **No security-guarantee claim.** Say "enforces one gateway source policy with a reason code for every drop" — never "blocks all prompt injection", "stops all RAG poisoning", or "makes agents safe". The eval measures stale/authority/duplicate traps on the deterministic echo mock, not adversarial red-teaming.
+9. **No Devpost-structure traps.** Open on the working failure (wrong price to a real customer) in the first 10–15 s — no long title card, no `docker compose` setup, signup, or loading screens on camera. Keep total runtime 85–150 s; read every number off a visible block; never voice numbers without showing them.
