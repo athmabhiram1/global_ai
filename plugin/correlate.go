@@ -121,6 +121,18 @@ func rememberDecision(req *schemas.BifrostRequest, id string) {
 	if h == "" {
 		return
 	}
+	rememberDecisionHash(h, id)
+}
+
+// rememberDecisionHash records a decision id under an explicit transcript
+// hash. The pipeline uses this with the pre-rewrite transcript: Rewrite
+// mutates the request in place before stashPending runs, so hashing the
+// mutated request would key the registry by bytes the client never sent and
+// the response hook could never match them.
+func rememberDecisionHash(h, id string) {
+	if h == "" || id == "" {
+		return
+	}
 	correlateMu.Lock()
 	defer correlateMu.Unlock()
 	if _, ok := correlateDec[h]; !ok {

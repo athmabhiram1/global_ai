@@ -253,6 +253,11 @@ func (p *pipeline) handle(ctx *schemas.BifrostContext, req *schemas.BifrostReque
 	if req == nil || req.ChatRequest == nil {
 		return d, nil
 	}
+	// Transcript hash of the request as the client sent it, taken before
+	// Rewrite mutates the messages in place. The response-headers hook
+	// correlates by the original body, so the registry must be keyed by
+	// these bytes, not the curated ones.
+	preHash := hashMessages(transcriptOfRequest(req))
 	chunks, err := Segment(req)
 	if err != nil {
 		return nil, err
@@ -294,7 +299,7 @@ func (p *pipeline) handle(ctx *schemas.BifrostContext, req *schemas.BifrostReque
 		if verr := d.Validate(); verr != nil {
 			return nil, verr
 		}
-		stashPending(ctx, *d, req)
+		stashPending(ctx, *d, req, preHash)
 		return d, fmt.Errorf("context-curator: request blocked: %s", dropped[0].Reason)
 	}
 	// Stale refusal runs after the block gate so block mode still fires only
@@ -344,7 +349,7 @@ func (p *pipeline) handle(ctx *schemas.BifrostContext, req *schemas.BifrostReque
 	if verr := d.Validate(); verr != nil {
 		return nil, verr
 	}
-	stashPending(ctx, *d, req)
+	stashPending(ctx, *d, req, preHash)
 	return d, nil
 }
 

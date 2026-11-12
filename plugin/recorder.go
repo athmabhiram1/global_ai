@@ -46,7 +46,12 @@ func storeForPersist() *store.Store {
 	return activeStore
 }
 
-func stashPending(ctx *schemas.BifrostContext, d Decision, req *schemas.BifrostRequest) {
+// stashPending carries the admission decision from PreRequestHook to
+// PostLLMHook. preHash is the transcript hash of the request as the client
+// sent it, taken before Rewrite mutates the messages in place; the response
+// hook looks the decision up by the original body, so registering the
+// rewritten bytes would key the registry by content the hook never sees.
+func stashPending(ctx *schemas.BifrostContext, d Decision, req *schemas.BifrostRequest, preHash string) {
 	if ctx == nil {
 		return
 	}
@@ -58,7 +63,11 @@ func stashPending(ctx *schemas.BifrostContext, d Decision, req *schemas.BifrostR
 	// registry (rememberDecision) when it cannot. Both are written here so
 	// neither reader depends on the other's channel.
 	ctx.SetValue(decisionIDKey, d.RequestID)
-	rememberDecision(req, d.RequestID)
+	if preHash != "" {
+		rememberDecisionHash(preHash, d.RequestID)
+	} else {
+		rememberDecision(req, d.RequestID)
+	}
 }
 
 // recordedRequest keeps the replayable shape of the request: model, provider,
