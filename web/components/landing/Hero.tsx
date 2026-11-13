@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import Link from "next/link";
 
 export const ROT_WORDS = [
-  "poisoned",
   "stale",
+  "poisoned",
   "duplicated",
   "unverified",
   "anonymous",
@@ -43,64 +44,44 @@ export function RotatingWord() {
   );
 }
 
-// Template hero-copy: kicker, h1 with kill strikethrough + hl accent, sub,
-// pri + acc CTAs, trust bar. The kill word rotates through the spec word
-// list; every dynamic number on the page comes from live props elsewhere.
-export default function Hero({ onTour }: { onTour?: () => void }) {
-  const tour =
-    onTour ??
-    (() => {
-      window.location.assign("/console?tour=1");
-    });
-
+// Centered hero per the template: eyebrow pill, h1 with the rotating word,
+// sub copy, then "Open the console" + "Connect your sidecar" CTAs. No dynamic
+// numbers here — live totals stay in the graph pill + console.
+export default function Hero() {
   return (
-    <div className="hero-copy">
-      <div className="kicker">
-        <span className="dot"></span>Bifrost native plugin · Pre-request
-        admission control
-      </div>
+    <section className="hero">
+      <span className="eyebrow">
+        <span className="dot"></span>BIFROST NATIVE PLUGIN · ADMISSION CONTROL
+      </span>
       <h1>
-        Your agent just read a{" "}
-        <span className="kill">
-          <RotatingWord /> page.
-        </span>
-        <br />
-        <span className="hl">Now the gateway stops it.</span>
+        Your agent just read a<br />
+        <RotatingWord /> page.<br />
+        The gateway has an opinion now.
       </h1>
       <p className="sub">
-        Context Curator scores every retrieved source —{" "}
-        <b>authority, freshness, independence, learned trust</b> — and kills
-        what doesn&apos;t earn its place. Every removal is recorded with a
-        reason, and proven by replay.
+        Context Curator performs <b>admission control on context</b> — every
+        retrieved chunk is scored on authority, freshness, independence and
+        learned utility; only what earns its place reaches the model; every
+        rejection is recorded with a reason code. Prove any decision by
+        removing the chunk and replaying the request.
       </p>
-      <div className="ctas">
-        <a className="btn pri" href="/console">
+      <div className="hero-ctas">
+        <Link className="btn pri" href="/console">
           Open the console{" "}
           <svg className="ic" viewBox="0 0 24 24">
             <path d="M5 12h14M13 6l6 6-6 6" />
           </svg>
-        </a>
-        <button className="btn acc" onClick={tour}>
-          <svg className="ic" viewBox="0 0 24 24">
-            <path d="M7 5l12 7-12 7z" />
-          </svg>{" "}
-          90-second tour
-        </button>
-      </div>
-      <div className="trust">
-        <span>
-          <b>+11 ms</b> p95
-        </span>
-        <span>
-          <b>100%</b> reasoned drops
-        </span>
-        <span>
-          <b>+52 pp</b> on stale sources
-        </span>
-        <span>
-          <b>1</b> container
+        </Link>
+        <Link className="lnk" href="/console">
+          Connect your sidecar
+        </Link>
+        <span className="or">
+          or press{" "}
+          <Link href="/console" aria-label="Open console with command palette">
+            <kbd>⌘K</kbd>
+          </Link>
         </span>
       </div>
-    </div>
+    </section>
   );
 }

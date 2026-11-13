@@ -24,14 +24,14 @@ export default function TourHost() {
 
   useEffect(() => {
     const manual = () => setTour({ auto: false });
-    window.addEventListener("cc-start-tour", manual);
+    window.addEventListener("cc-tour-start", manual);
     let pathname = "";
     let search = "";
     try {
       pathname = window.location.pathname;
       search = window.location.search;
     } catch {
-      return () => window.removeEventListener("cc-start-tour", manual);
+      return () => window.removeEventListener("cc-tour-start", manual);
     }
     const redirect = demoLandingRedirect(pathname, search);
     if (redirect) {
@@ -43,7 +43,7 @@ export default function TourHost() {
     } else if (isTourStart(search)) {
       setTour({ auto: false });
     }
-    return () => window.removeEventListener("cc-start-tour", manual);
+    return () => window.removeEventListener("cc-tour-start", manual);
   }, []);
 
   return (

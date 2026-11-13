@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { mapDecisions, type DecisionListItem } from "../lib/api";
-import { cutPct, MIN_SAMPLE, p95, reasonShare } from "../lib/format";
+import { MIN_SAMPLE } from "../lib/format";
 import Hero from "../components/landing/Hero";
 import Graph from "../components/landing/Graph";
 import Stats from "../components/landing/Stats";
@@ -12,17 +12,19 @@ import Stats from "../components/landing/Stats";
 function statsOf(rows: DecisionListItem[]) {
   const admitted = rows.reduce((s, r) => s + r.cout, 0);
   const killed = rows.reduce((s, r) => s + (r.cin - r.cout), 0);
-  const tin = rows.reduce((s, r) => s + r.tin, 0);
-  const tout = rows.reduce((s, r) => s + r.tout, 0);
   return {
     admitted,
     killed,
-    p95ms: p95(rows.map((r) => r.ms)),
-    cut: tin > 0 ? cutPct(tin, tout) : null,
-    reasonShare: reasonShare(rows.flatMap((r) => r.reasons)),
     enough: rows.length >= MIN_SAMPLE,
   };
 }
+
+const SECTIONS = [
+  ["Traces", "/console#pv-traces"],
+  ["Autopsy", "/console#pv-autopsy"],
+  ["Sources", "/console#pv-sources"],
+  ["Policy", "/console#pv-policy"],
+] as const;
 
 export default function Landing() {
   const router = useRouter();
@@ -79,7 +81,13 @@ export default function Landing() {
 
   const s = statsOf(rows);
   const booted = live !== null;
-  const goTour = () => router.push("/console?tour=1");
+  // Guided tour entry: TourHost listens globally; the tour targets live DOM
+  // in the console. Same event the console Shell dispatches.
+  const goTour = () => {
+    try {
+      window.dispatchEvent(new CustomEvent("cc-tour-start"));
+    } catch {}
+  };
 
   return (
     <main id="pg-landing" className="page active">
@@ -111,11 +119,27 @@ export default function Landing() {
             <b>Context Curator</b>
             <small>v2</small>
           </Link>
+          <nav aria-label="Sections">
+            {SECTIONS.map(([label, href]) => (
+              <a key={label} href={href}>
+                {label}
+              </a>
+            ))}
+          </nav>
           <div className="right">
-            <button className="btn acc sm" onClick={goTour}>
+            <Link
+              className="kchip"
+              href="/console"
+              aria-label="Search — open console"
+            >
               <svg className="ic" viewBox="0 0 24 24">
-                <path d="M7 5l12 7-12 7z" />
-              </svg>{" "}
+                <circle cx="11" cy="11" r="7" />
+                <path d="M21 21l-4.3-4.3" />
+              </svg>
+              <span>Search</span>
+              <kbd>⌘K</kbd>
+            </Link>
+            <button className="btn sm" onClick={goTour}>
               Guided tour
             </button>
             <Link className="btn pri sm" href="/console">
@@ -125,15 +149,23 @@ export default function Landing() {
         </div>
       </header>
 
-      <div className="hero-grid wrap">
-        <Hero onTour={goTour} />
-        <Graph admitted={s.admitted} killed={s.killed} live={live === true} />
+      <Hero />
+      <div className="graph-outer">
+        <Graph
+          admitted={s.admitted}
+          killed={s.killed}
+          live={live === true}
+          enough={s.enough}
+        />
       </div>
-      <Stats s={s} />
+      <Stats />
 
-      <footer className="lfoot wrap">
+      <footer className="lfoot">
         <span>© 2026 Context Curator — a Bifrost gateway plugin</span>
-        <span className="fq">“Which sources are allowed to speak.”</span>
+        <span className="fq">
+          “Compression asks how few tokens. We ask which sources are allowed
+          to speak.”
+        </span>
         <span className="sp"></span>
         <span>
           <span
@@ -146,7 +178,8 @@ export default function Landing() {
               : live
                 ? "sidecar connected"
                 : "sidecar unreachable — console shows disconnected state"}
-          </span>
+          </span>{" "}
+          · <kbd>⌘K</kbd> · guided demo: <kbd>?demo=1</kbd>
         </span>
       </footer>
     </main>

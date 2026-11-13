@@ -11,10 +11,10 @@ afterEach(() => {
 });
 
 describe("landing rotating word", () => {
-  it("uses the spec word list [poisoned|stale|duplicated|unverified|anonymous]", () => {
+  it("uses the spec word list [stale|poisoned|duplicated|unverified|anonymous]", () => {
     expect(ROT_WORDS).toEqual([
-      "poisoned",
       "stale",
+      "poisoned",
       "duplicated",
       "unverified",
       "anonymous",
@@ -26,7 +26,7 @@ describe("landing rotating word", () => {
     vi.useFakeTimers();
     render(<Hero />);
     const el = document.getElementById("rotw")!;
-    expect(el.textContent).toBe("poisoned");
+    expect(el.textContent).toBe("stale");
     act(() => {
       vi.advanceTimersByTime(2700);
     });
@@ -34,41 +34,74 @@ describe("landing rotating word", () => {
     act(() => {
       vi.advanceTimersByTime(300);
     });
-    expect(el.textContent).toBe("stale");
+    expect(el.textContent).toBe("poisoned");
     expect(el.classList.contains("out")).toBe(false);
     act(() => {
       vi.advanceTimersByTime(2700 + 300);
     });
     expect(el.textContent).toBe("duplicated");
   });
+
+  it("respects prefers-reduced-motion: static first word, no timer", () => {
+    const orig = window.matchMedia;
+    window.matchMedia = (() => ({
+      matches: true,
+    })) as unknown as typeof window.matchMedia;
+    try {
+      vi.useFakeTimers();
+      render(<Hero />);
+      const el = document.getElementById("rotw")!;
+      expect(el.textContent).toBe("stale");
+      act(() => {
+        vi.advanceTimersByTime(2700 * 3 + 900);
+      });
+      expect(el.textContent).toBe("stale");
+      expect(el.classList.contains("out")).toBe(false);
+    } finally {
+      window.matchMedia = orig;
+    }
+  });
 });
 
-describe("landing stats honesty", () => {
-  it("shows — for metric cards with fewer than 5 decisions", () => {
-    render(
-      <Stats
-        s={{ p95ms: 12, cut: 40, reasonShare: 1, enough: false }}
-      />,
+describe("landing stat cards (static template strip)", () => {
+  it("renders the four verbatim template values with count-up targets", () => {
+    const { container } = render(<Stats />);
+    // static marketing strip: data-to targets verbatim from the template
+    const targets = Array.from(container.querySelectorAll("[data-to]")).map(
+      (el) => el.getAttribute("data-to"),
     );
-    const dashes = screen.getAllByText("—");
-    // 3 metric cards dash; container card stays a product fact (1)
-    expect(dashes.length).toBe(3);
+    expect(targets).toEqual(["15", "25", "100", "1"]);
+    expect(screen.getByText(/p95 overhead · no refresh/)).toBeTruthy();
+    expect(screen.getByText(/input tokens cut · context-heavy/)).toBeTruthy();
+    expect(
+      screen.getByText(/dropped chunks carry a reason code/),
+    ).toBeTruthy();
+    expect(screen.getByText(/container · one command · no fork/)).toBeTruthy();
   });
 
-  it("shows real aggregates once 5+ decisions exist", () => {
-    render(
-      <Stats s={{ p95ms: 12, cut: 40, reasonShare: 1, enough: true }} />,
-    );
+  it("count-up animates the static values (reduced-motion respected)", () => {
+    vi.useFakeTimers();
+    render(<Stats />);
+    act(() => {
+      vi.advanceTimersByTime(1200);
+    });
+    expect(screen.getByText("15")).toBeTruthy();
+    expect(screen.getByText("25")).toBeTruthy();
+    expect(screen.getByText("100")).toBeTruthy();
+  });
+
+  it("never renders a — placeholder: live numbers stay in the graph pill", () => {
+    render(<Stats />);
     expect(screen.queryAllByText("—").length).toBe(0);
   });
 });
 
 describe("landing graph honesty", () => {
-  it("has a Reset button and draggable snap nodes", () => {
+  it("has a Reset layout button and draggable snap nodes", () => {
     const { container } = render(
       <Graph admitted={132} killed={57} live={true} />,
     );
-    expect(screen.getByText("Reset")).toBeTruthy();
+    expect(screen.getByText("Reset layout")).toBeTruthy();
     const nodes = container.querySelectorAll(".node");
     expect(nodes.length).toBeGreaterThan(0);
     nodes.forEach((n) => {
@@ -89,5 +122,11 @@ describe("landing graph honesty", () => {
     expect(screen.getByText(/offline/i)).toBeTruthy();
     // last-successful data still rendered, never fabricated rows
     expect(document.getElementById("gw-adm")!.textContent).toBe("132");
+  });
+
+  it("shows — totals while fewer than 5 ledger rows exist", () => {
+    render(<Graph admitted={3} killed={1} live={true} enough={false} />);
+    expect(document.getElementById("gw-adm")!.textContent).toBe("—");
+    expect(document.getElementById("gw-kill")!.textContent).toBe("—");
   });
 });

@@ -1,6 +1,7 @@
 # local-only visual references (never pushed, never baked into the image)
 web/temp1.html
 web/template.html
+web/hero.html
 
 # build output
 /out/

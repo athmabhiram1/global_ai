@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { render, screen, cleanup, act } from "@testing-library/react";
+import {
+  render,
+  screen,
+  cleanup,
+  act,
+  fireEvent,
+} from "@testing-library/react";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import Stats from "./Stats";
@@ -43,82 +49,138 @@ describe("landing shell parity", () => {
     expect(container.querySelector("#toasts")).toBeTruthy();
   });
 
-  it("lnav has no section links: logo home + Guided tour + Open console", () => {
+  it("lnav: logo home + section anchors + Search chip + Guided tour + Open console", () => {
     const { container } = render(<Landing />);
     const nav = container.querySelector(".lnav");
     expect(nav).toBeTruthy();
-    expect(nav!.querySelector("nav")).toBeNull();
     expect(nav!.querySelector('a.logo[href="/"]')).toBeTruthy();
+    const links = Array.from(nav!.querySelectorAll("nav a"));
+    expect(links.map((a) => a.textContent)).toEqual([
+      "Traces",
+      "Autopsy",
+      "Sources",
+      "Policy",
+    ]);
+    expect(links.map((a) => a.getAttribute("href"))).toEqual([
+      "/console#pv-traces",
+      "/console#pv-autopsy",
+      "/console#pv-sources",
+      "/console#pv-policy",
+    ]);
+    // Search ⌘K chip routes to the console where the real palette lives
+    const chip = nav!.querySelector('a.kchip[href="/console"]');
+    expect(chip).toBeTruthy();
+    expect(chip!.textContent).toMatch(/Search/);
+    expect(chip!.textContent).toMatch(/⌘K/);
     expect(screen.getByText("Guided tour")).toBeTruthy();
-    const open = nav!.querySelector('a[href="/console"]');
-    expect(open).toBeTruthy();
-    expect(open!.textContent).toMatch(/Open console/);
+    const open = nav!.querySelectorAll('a[href="/console"]');
+    expect(
+      Array.from(open).some((a) => /Open console/.test(a.textContent ?? "")),
+    ).toBe(true);
   });
 
-  it("renders the hero-grid with kicker, kill + hl headline, CTAs, trust bar", () => {
+  it("Guided tour dispatches cc-tour-start", () => {
+    render(<Landing />);
+    const seen: Event[] = [];
+    const on = (e: Event) => seen.push(e);
+    window.addEventListener("cc-tour-start", on);
+    try {
+      fireEvent.click(screen.getByText("Guided tour"));
+      expect(seen.length).toBe(1);
+    } finally {
+      window.removeEventListener("cc-tour-start", on);
+    }
+  });
+
+  it("renders centered hero: eyebrow pill, rotator headline, sub, CTAs", () => {
     const { container } = render(<Landing />);
-    const grid = container.querySelector(".hero-grid.wrap");
-    expect(grid).toBeTruthy();
-    expect(grid!.querySelector(".kicker")).toBeTruthy();
-    expect(grid!.querySelector("h1 .kill")).toBeTruthy();
-    expect(grid!.querySelector("h1 .hl")).toBeTruthy();
-    expect(screen.getByText("90-second tour")).toBeTruthy();
-    const trust = grid!.querySelector(".trust");
-    expect(trust).toBeTruthy();
-    expect(trust!.textContent).toMatch(/\+11 ms/);
-    expect(trust!.textContent).toMatch(/100%/);
-    expect(trust!.textContent).toMatch(/\+52 pp/);
-    // hero-viz graph frame, not the old graph-outer wrapper
-    expect(grid!.querySelector(".hero-viz .graph-frame")).toBeTruthy();
-    expect(container.querySelector(".graph-outer")).toBeNull();
+    const hero = container.querySelector("section.hero");
+    expect(hero).toBeTruthy();
+    expect(hero!.querySelector(".eyebrow")!.textContent).toMatch(
+      /ADMISSION CONTROL/,
+    );
+    const h1 = hero!.querySelector("h1")!;
+    expect(h1.textContent).toMatch(/Your agent just read a/);
+    expect(h1.textContent).toMatch(/The gateway has an opinion now/);
+    expect(hero!.querySelector("#rotw")).toBeTruthy();
+    const open = hero!.querySelector('a[href="/console"]');
+    expect(open!.textContent).toMatch(/Open the console/);
+    expect(
+      screen.getByText("Connect your sidecar").closest("a"),
+    ).toBeTruthy();
+    expect(
+      screen
+        .getByText("Connect your sidecar")
+        .closest("a")!
+        .getAttribute("href"),
+    ).toBe("/console");
+    // graph frame lives below the hero in its own full-width wrapper
+    expect(container.querySelector(".graph-outer .graph-frame")).toBeTruthy();
+    expect(container.querySelector(".hero-grid")).toBeNull();
   });
 
-  it("renders ruled stats and the template footer quote", () => {
+  it("renders boxed stat cards and the template footer quote", () => {
     const { container } = render(<Landing />);
     expect(container.querySelectorAll(".stats-row .stat-c").length).toBe(4);
-    expect(screen.getByText(/Which sources are allowed to speak/)).toBeTruthy();
+    expect(
+      screen.getByText(/Compression asks how few tokens/),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/We ask which sources are allowed to speak/),
+    ).toBeTruthy();
     expect(container.querySelector("#boot-dot")).toBeTruthy();
     expect(container.querySelector("#boot-txt")).toBeTruthy();
+    // right side: live sidecar state · ⌘K · guided demo ?demo=1
+    expect(screen.getByText(/\?demo=1/)).toBeTruthy();
   });
 
-  it("emits no external font requests in rendered output", () => {
+  it("emits no external font requests in rendered output or document head", () => {
     const { container } = render(<Landing />);
     const html = container.innerHTML;
     expect(html).not.toMatch(/fonts\.googleapis\.com/);
     expect(html).not.toMatch(/fonts\.gstatic\.com/);
     expect(html).not.toMatch(/<link/i);
+    expect(document.head.innerHTML).not.toMatch(/fonts\.googleapis\.com/);
+    expect(document.head.innerHTML).not.toMatch(/fonts\.gstatic\.com/);
   });
 
   it("renders data-reveal stat cards with data-to count-up targets", () => {
-    const { container } = render(
-      <Stats s={{ p95ms: 12, cut: 40, reasonShare: 1, enough: true }} />,
-    );
+    const { container } = render(<Stats />);
     const reveals = container.querySelectorAll("[data-reveal]");
     expect(reveals.length).toBe(4);
     const targets = container.querySelectorAll("[data-to]");
-    // 3 metric cards carry count-up targets; container card stays a fact (1)
-    expect(targets.length).toBe(3);
+    // all four static template values carry count-up targets
+    expect(targets.length).toBe(4);
   });
 
-  it("count-up animates metric values (reduced-motion respected)", () => {
+  it("count-up animates static values (reduced-motion respected)", () => {
     vi.useFakeTimers();
-    render(
-      <Stats s={{ p95ms: 12, cut: 40, reasonShare: 1, enough: true }} />,
-    );
+    render(<Stats />);
     act(() => {
       vi.advanceTimersByTime(1200);
     });
-    // after count-up the real aggregates are visible
-    expect(screen.getByText("12")).toBeTruthy();
-    expect(screen.getByText("40")).toBeTruthy();
+    // after count-up the template values are visible
+    expect(screen.getByText("15")).toBeTruthy();
+    expect(screen.getByText("25")).toBeTruthy();
+    expect(screen.getByText("100")).toBeTruthy();
   });
 
   it("graph hint copy matches the template", () => {
     render(<Graph admitted={132} killed={57} live={true} />);
     expect(
       screen.getByText(
-        /Drag the nodes — killed chunks fall out with reason codes/i,
+        /Drag the nodes — snap 16px — the request path keeps flowing/i,
       ),
     ).toBeTruthy();
+    expect(
+      screen.getByText(/Killed chunks fall out with reason codes/i),
+    ).toBeTruthy();
+  });
+
+  it("graph pill shows live totals from real ledger props", () => {
+    render(<Graph admitted={132} killed={57} live={true} />);
+    expect(screen.getByText(/LIVE/)).toBeTruthy();
+    expect(document.getElementById("gw-adm")!.textContent).toBe("132");
+    expect(document.getElementById("gw-kill")!.textContent).toBe("57");
   });
 });

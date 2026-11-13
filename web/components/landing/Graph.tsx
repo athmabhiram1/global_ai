@@ -51,10 +51,12 @@ export default function Graph({
   admitted,
   killed,
   live,
+  enough = true,
 }: {
   admitted: number;
   killed: number;
   live: boolean;
+  enough?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
@@ -250,17 +252,17 @@ export default function Graph({
               <>
                 LIVE · <b>PreRequestHook</b> · admitted{" "}
                 <b className="acc" id="gw-adm">
-                  {admitted}
+                  {enough ? admitted : "—"}
                 </b>{" "}
-                · killed <b id="gw-kill">{killed}</b>
+                · killed <b id="gw-kill">{enough ? killed : "—"}</b>
               </>
             ) : (
               <>
                 offline · <b>PreRequestHook</b> · last seen admitted{" "}
                 <b className="acc" id="gw-adm">
-                  {admitted}
+                  {enough ? admitted : "—"}
                 </b>{" "}
-                · killed <b id="gw-kill">{killed}</b>
+                · killed <b id="gw-kill">{enough ? killed : "—"}</b>
               </>
             )}
           </span>
@@ -269,11 +271,12 @@ export default function Graph({
             id="gw-reset"
             onClick={() => setOff(BASE.map(() => ({ x: 0, y: 0 })))}
           >
-            Reset
+            Reset layout
           </button>
         </div>
         <div className="g-hint">
-          Drag the nodes — killed chunks fall out with reason codes
+          Drag the nodes — snap 16px — the request path keeps flowing. Killed
+          chunks fall out with reason codes.
         </div>
       </div>
     </div>
