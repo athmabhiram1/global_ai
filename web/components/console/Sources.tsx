@@ -21,18 +21,16 @@ export function SourcesTable({
         <span>Domain</span>
         <span>α / β</span>
         <span>Utility</span>
-        <span className="rhide">Seen</span>
         <span className="rhide">Learned in</span>
-        <span className="rhide2">Status</span>
         <span style={{ textAlign: "right" }}>Record</span>
       </div>
       <div id="rep-body">
         {rows.map((r) => {
-          const u = (r.a + r.b ? r.a / (r.a + r.b) : 0.5) * 100;
+          const u = r.a + r.b ? r.a / (r.a + r.b) : 0.5;
           const cls =
-            u >= 65 ? "" : u >= 40 ? "mid" : "low";
+            u >= 0.65 ? "" : u >= 0.4 ? "mid" : "low";
           return (
-            <div className="rrow" key={r.domain}>
+            <div className="rrow" key={r.domain} data-dom={r.domain}>
               <span className="dom">
                 <span className="mono">{r.domain}</span>
                 <span className={`tier ${r.tier}`}>{r.tier}</span>
@@ -43,30 +41,22 @@ export function SourcesTable({
                 )}
               </span>
               <span className="ab mono">
-                <b>{r.a}</b>/{r.b}
+                α <b>{r.a}</b> · β <b>{r.b}</b>
               </span>
               <span>
                 <div className="ubar">
                   <i
                     className={cls}
-                    style={{ transform: `scaleX(${u / 100})` }}
+                    style={{ transform: `scaleX(${u.toFixed(3)})` }}
                   ></i>
                 </div>
-                <span className="upct">{u.toFixed(0)}%</span>
+                <span className="upct">{u.toFixed(2)}</span>
               </span>
-              <span className="seen rhide">{r.seen}</span>
-              <span className="apps rhide">fleet</span>
-              <span className="rhide2">
-                {r.denied ? (
-                  <span className="chip r">denied</span>
-                ) : (
-                  <span className="chip g">live</span>
-                )}
-              </span>
-              <span className="racts" style={{ justifyContent: "flex-end" }}>
+              <span className="apps rhide">{r.apps.join(" · ")}</span>
+              <span className="racts">
                 <button
                   className="good"
-                  title="good"
+                  title="α += 1"
                   aria-label={`good ${r.domain}`}
                   onClick={() => onGood(r.domain)}
                 >
@@ -74,7 +64,7 @@ export function SourcesTable({
                 </button>
                 <button
                   className="badd"
-                  title="bad"
+                  title="β += 1"
                   aria-label={`bad ${r.domain}`}
                   onClick={() => onBad(r.domain)}
                 >
@@ -127,9 +117,11 @@ export default function SourcesSection({
   }
 
   async function deny(domain: string) {
-    // Real and cross-request: the sidecar persists Denied, so the next
-    // admission from this domain drops with authority_denied.
-    await api.deny(domain, true);
+    // Live and cross-request: the sidecar persists Denied, so the next
+    // admission from this domain drops with authority_denied. Deny toggles:
+    // pressing it on a denied domain releases it again.
+    const row = rows?.find((r) => r.domain === domain);
+    await api.deny(domain, !(row?.denied ?? false));
     onChanged();
   }
 
@@ -148,12 +140,34 @@ export default function SourcesSection({
     );
 
   return (
-    <SourcesTable
-      rows={rows}
-      onGood={(d) => void vote(d, "good")}
-      onBad={(d) => void vote(d, "bad")}
-      onDeny={(d) => void deny(d)}
-      onReset={(d) => void reset(d)}
-    />
+    <>
+      <div className="expl">
+        <div className="ex">
+          <b>
+            Learning <span className="m">α+1 · β+1</span>
+          </b>
+          <p>Feedback moves the posterior; the scorer reads it next request.</p>
+        </div>
+        <div className="ex">
+          <b>
+            Decay <span className="m">0.99 / day</span>
+          </b>
+          <p>Posteriors fade toward Beta(1, 1).</p>
+        </div>
+        <div className="ex">
+          <b>
+            Cross-app <span className="m">1 table · N apps</span>
+          </b>
+          <p>Deny here hard-blocks everywhere, before any model call.</p>
+        </div>
+      </div>
+      <SourcesTable
+        rows={rows}
+        onGood={(d) => void vote(d, "good")}
+        onBad={(d) => void vote(d, "bad")}
+        onDeny={(d) => void deny(d)}
+        onReset={(d) => void reset(d)}
+      />
+    </>
   );
 }

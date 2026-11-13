@@ -71,20 +71,20 @@ export default function Stats({ s }: { s: LandingStats }) {
           {s.enough && s.cut !== null ? <CountUp to={s.cut} /> : dash}
           <span className="u">%</span>
         </div>
-        <p>input tokens cut · context-heavy</p>
+        <p>input tokens cut</p>
       </div>
       <div className="stat-c" data-reveal style={{ ["--i" as string]: 2 }}>
         <div className="v">
           {share !== null ? <CountUp to={Number(share)} /> : dash}
           <span className="u">%</span>
         </div>
-        <p>dropped chunks carry a reason code</p>
+        <p>dropped chunks carry a reason</p>
       </div>
       <div className="stat-c" data-reveal style={{ ["--i" as string]: 3 }}>
         <div className="v">
           <span>1</span>
         </div>
-        <p>container · one command · no fork</p>
+        <p>container · no fork</p>
       </div>
     </div>
   );

@@ -42,10 +42,11 @@ export function ledgerStats(rows: DecisionListItem[]): LedgerStats {
 // mirrors the template; values stay computed, never fabricated.
 function Spark({ id, seed }: { id: string; seed: string }) {
   useEffect(() => {
-    const cv = document.getElementById(id) as HTMLCanvasElement | null;
-    if (!cv) return;
-    const ctx = cv.getContext("2d");
-    if (!ctx) return;
+    try {
+      const cv = document.getElementById(id) as HTMLCanvasElement | null;
+      if (!cv || typeof cv.getContext !== "function") return;
+      const ctx = cv.getContext("2d");
+      if (!ctx) return;
     let h = 2166136261;
     for (let i = 0; i < seed.length; i++) {
       h ^= seed.charCodeAt(i);
@@ -72,6 +73,9 @@ function Spark({ id, seed }: { id: string; seed: string }) {
     ctx.strokeStyle = "rgba(169,176,184,.8)";
     ctx.lineWidth = 1.5;
     ctx.stroke();
+    } catch {
+      return;
+    }
   }, [id, seed]);
   return <canvas id={id} width={120} height={38}></canvas>;
 }

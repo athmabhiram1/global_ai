@@ -5,6 +5,17 @@
 // Field names mirror the Go JSON (snake_case). Decision rows may carry full
 // ChunkRecords (new backend) or only kept/dropped ID lists (old rows) —
 // mapDetail prefers records and falls back to ID-only chunks.
+//
+// Demo mode (?demo=1): read paths serve the illustrative DEMO_* seed and
+// mutations apply to an in-memory copy. Real mode is byte-for-byte unchanged.
+
+import { isDemoStart } from "./tour";
+import {
+  DEMO_DECISIONS,
+  DEMO_DECISION_DETAIL,
+  DEMO_POLICY_SUMMARY,
+  DEMO_REPUTATION,
+} from "./demoSeed";
 
 export interface DropReason {
   id: string;
@@ -147,10 +158,12 @@ export interface AutopsyResult {
   attribution?: string;
   chunk_domain?: string;
   chunk_tokens?: number;
-  // Narrative fields the sidecar may add later; rendered only when present,
+  // Narrative fields the sidecar may return; rendered only when present,
   // never fabricated from other fields.
   quote?: string;
   verdict?: string;
+  /** Run label the sidecar attaches (e.g. "ON FILE"); shown as a .samp chip. */
+  sample?: string;
 }
 
 export interface Claim {
@@ -158,6 +171,8 @@ export interface Claim {
   source: string;
   freshness: number;
   evidence: string[];
+  /** Optional contradiction note; rendered as .cf only when provided. */
+  conflict?: string;
 }
 
 export interface PolicySummary {
@@ -191,6 +206,35 @@ export function parsePolicyMode(raw: string): string {
 
 function ageStr(h: number): string {
   return h >= 1 ? h + " h" : Math.max(1, Math.round(h * 60)) + " m";
+}
+
+/** True only when the URL carries ?demo (any value). False server-side. */
+export function isDemoMode(): boolean {
+  try {
+    if (typeof window === "undefined") return false;
+    return isDemoStart(window.location.search);
+  } catch {
+    return false;
+  }
+}
+
+function clone<T>(v: T): T {
+  return JSON.parse(JSON.stringify(v)) as T;
+}
+
+// In-memory demo store: a writable copy of the seed. Mutations (feedback,
+// deny, setMode, resetRep) apply here; reads serve from here.
+let demoDecisions: DecisionRow[] = clone(DEMO_DECISIONS);
+let demoDetail: Record<string, DecisionRow> = clone(DEMO_DECISION_DETAIL);
+let demoReputation: RepRow[] = clone(DEMO_REPUTATION);
+let demoMode: string = "rewrite";
+
+/** Restore the demo store to the seed (used by tests). */
+export function __resetDemoStore(): void {
+  demoDecisions = clone(DEMO_DECISIONS);
+  demoDetail = clone(DEMO_DECISION_DETAIL);
+  demoReputation = clone(DEMO_REPUTATION);
+  demoMode = "rewrite";
 }
 
 /** Same-origin proxy prefix. The route handler injects auth server-side. */
@@ -316,6 +360,7 @@ export const api = {
     return req("/healthz");
   },
   policy(): Promise<Policy> {
+    if (isDemoMode()) return Promise.resolve({ mode: demoMode });
     return req(`${CC}/policy`);
   },
   async policyText(): Promise<PolicyText> {
@@ -325,43 +370,126 @@ export const api = {
     return { raw, mode: parsePolicyMode(raw) };
   },
   policySummary(): Promise<PolicySummary> {
+    if (isDemoMode()) {
+      return Promise.resolve({
+        ...clone(DEMO_POLICY_SUMMARY),
+        effective_mode: demoMode,
+        mode: demoMode,
+      });
+    }
     return req(`${CC}/policy/summary`);
   },
   setMode(mode: "annotate" | "rewrite" | "block"): Promise<{ mode: string }> {
+    if (isDemoMode()) {
+      demoMode = mode;
+      return Promise.resolve({ mode });
+    }
     return req(`${CC}/policy/mode`, {
       method: "POST",
       body: JSON.stringify({ mode }),
     });
   },
   decisions(): Promise<DecisionListItem[]> {
+    if (isDemoMode()) return Promise.resolve(mapDecisions(demoDecisions));
     return req<DecisionRow[]>(`${CC}/decisions`).then(mapDecisions);
   },
   decisionRows(): Promise<DecisionRow[]> {
+    if (isDemoMode()) return Promise.resolve(clone(demoDecisions));
     return req<DecisionRow[]>(`${CC}/decisions`);
   },
   decision(id: string): Promise<DecisionDetail> {
+    if (isDemoMode()) {
+      const row = demoDetail[id];
+      if (!row) {
+        return Promise.reject(
+          new Error(`${CC}/decisions/${id} -> 404: not found`),
+        );
+      }
+      return Promise.resolve(mapDetail(clone(row)));
+    }
     return req<DecisionRow>(
       `${CC}/decisions/` + encodeURIComponent(id),
     ).then(mapDetail);
   },
   reputation(): Promise<RepItem[]> {
+    if (isDemoMode())
+      return Promise.resolve(demoReputation.map((r) => mapRep(clone(r))));
     return req<RepRow[]>(`${CC}/reputation`).then((rows) =>
       rows.map(mapRep),
     );
   },
   feedback(domain: string, verdict: "good" | "bad"): Promise<RepRow> {
+    if (isDemoMode()) {
+      let row = demoReputation.find((r) => r.Domain === domain);
+      if (!row) {
+        row = {
+          Domain: domain,
+          Alpha: 1,
+          Beta: 1,
+          LastSeen: new Date().toISOString(),
+          Denied: false,
+        };
+        demoReputation.push(row);
+      }
+      if (verdict === "good") row.Alpha += 1;
+      else row.Beta += 1;
+      row.LastSeen = new Date().toISOString();
+      return Promise.resolve(clone(row));
+    }
     return req(`${CC}/feedback`, {
       method: "POST",
       body: JSON.stringify({ domain, positive: verdict === "good" }),
     });
   },
   deny(domain: string, denied = true): Promise<RepRow> {
+    if (isDemoMode()) {
+      let row = demoReputation.find((r) => r.Domain === domain);
+      if (!row) {
+        row = {
+          Domain: domain,
+          Alpha: 1,
+          Beta: 1,
+          LastSeen: new Date().toISOString(),
+          Denied: denied,
+        };
+        demoReputation.push(row);
+      } else {
+        row.Denied = denied;
+        row.LastSeen = new Date().toISOString();
+      }
+      return Promise.resolve(clone(row));
+    }
     return req(`${CC}/deny`, {
       method: "POST",
       body: JSON.stringify({ domain, denied }),
     });
   },
   resetRep(domain?: string): Promise<RepRow[]> {
+    if (isDemoMode()) {
+      const fresh = (): RepRow => ({
+        Domain: "",
+        Alpha: 1,
+        Beta: 1,
+        LastSeen: new Date().toISOString(),
+        Denied: false,
+      });
+      if (domain) {
+        const row = demoReputation.find((r) => r.Domain === domain);
+        if (row) {
+          row.Alpha = 1;
+          row.Beta = 1;
+          row.Denied = false;
+          row.LastSeen = new Date().toISOString();
+          return Promise.resolve([clone(row)]);
+        }
+        return Promise.resolve([]);
+      }
+      demoReputation = demoReputation.map((r) => ({
+        ...fresh(),
+        Domain: r.Domain,
+      }));
+      return Promise.resolve(clone(demoReputation));
+    }
     return req(`${CC}/reputation/reset`, {
       method: "POST",
       body: JSON.stringify(domain ? { domain } : {}),

@@ -64,11 +64,11 @@ describe("landing stats honesty", () => {
 });
 
 describe("landing graph honesty", () => {
-  it("has a Reset layout button and draggable snap nodes", () => {
+  it("has a Reset button and draggable snap nodes", () => {
     const { container } = render(
       <Graph admitted={132} killed={57} live={true} />,
     );
-    expect(screen.getByText("Reset layout")).toBeTruthy();
+    expect(screen.getByText("Reset")).toBeTruthy();
     const nodes = container.querySelectorAll(".node");
     expect(nodes.length).toBeGreaterThan(0);
     nodes.forEach((n) => {

@@ -43,6 +43,52 @@ describe("landing shell parity", () => {
     expect(container.querySelector("#toasts")).toBeTruthy();
   });
 
+  it("lnav has no section links: logo home + Guided tour + Open console", () => {
+    const { container } = render(<Landing />);
+    const nav = container.querySelector(".lnav");
+    expect(nav).toBeTruthy();
+    expect(nav!.querySelector("nav")).toBeNull();
+    expect(nav!.querySelector('a.logo[href="/"]')).toBeTruthy();
+    expect(screen.getByText("Guided tour")).toBeTruthy();
+    const open = nav!.querySelector('a[href="/console"]');
+    expect(open).toBeTruthy();
+    expect(open!.textContent).toMatch(/Open console/);
+  });
+
+  it("renders the hero-grid with kicker, kill + hl headline, CTAs, trust bar", () => {
+    const { container } = render(<Landing />);
+    const grid = container.querySelector(".hero-grid.wrap");
+    expect(grid).toBeTruthy();
+    expect(grid!.querySelector(".kicker")).toBeTruthy();
+    expect(grid!.querySelector("h1 .kill")).toBeTruthy();
+    expect(grid!.querySelector("h1 .hl")).toBeTruthy();
+    expect(screen.getByText("90-second tour")).toBeTruthy();
+    const trust = grid!.querySelector(".trust");
+    expect(trust).toBeTruthy();
+    expect(trust!.textContent).toMatch(/\+11 ms/);
+    expect(trust!.textContent).toMatch(/100%/);
+    expect(trust!.textContent).toMatch(/\+52 pp/);
+    // hero-viz graph frame, not the old graph-outer wrapper
+    expect(grid!.querySelector(".hero-viz .graph-frame")).toBeTruthy();
+    expect(container.querySelector(".graph-outer")).toBeNull();
+  });
+
+  it("renders ruled stats and the template footer quote", () => {
+    const { container } = render(<Landing />);
+    expect(container.querySelectorAll(".stats-row .stat-c").length).toBe(4);
+    expect(screen.getByText(/Which sources are allowed to speak/)).toBeTruthy();
+    expect(container.querySelector("#boot-dot")).toBeTruthy();
+    expect(container.querySelector("#boot-txt")).toBeTruthy();
+  });
+
+  it("emits no external font requests in rendered output", () => {
+    const { container } = render(<Landing />);
+    const html = container.innerHTML;
+    expect(html).not.toMatch(/fonts\.googleapis\.com/);
+    expect(html).not.toMatch(/fonts\.gstatic\.com/);
+    expect(html).not.toMatch(/<link/i);
+  });
+
   it("renders data-reveal stat cards with data-to count-up targets", () => {
     const { container } = render(
       <Stats s={{ p95ms: 12, cut: 40, reasonShare: 1, enough: true }} />,
@@ -71,7 +117,7 @@ describe("landing shell parity", () => {
     render(<Graph admitted={132} killed={57} live={true} />);
     expect(
       screen.getByText(
-        /Drag the nodes — snap 16px — the request path keeps flowing/i,
+        /Drag the nodes — killed chunks fall out with reason codes/i,
       ),
     ).toBeTruthy();
   });

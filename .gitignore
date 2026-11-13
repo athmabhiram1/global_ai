@@ -10,6 +10,8 @@ vendor/
 # node
 node_modules/
 web/dist/
+web/.next/
+web/tsconfig.tsbuildinfo
 
 # data
 *.db

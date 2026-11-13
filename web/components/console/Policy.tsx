@@ -171,11 +171,11 @@ export function PolicyView({
               <span className="a">→</span>
               <span className="h">Pre</span>
               <span className="a">→</span>
-              <span className="h cur">PreRequest · curator</span>
+              <span className="h cur">PreRequest</span>
               <span className="a">→</span>
               <span className="h">provider + fallbacks</span>
               <span className="a">→</span>
-              <span className="h">PostLLM · persist</span>
+              <span className="h">PostLLM</span>
               <span className="a">→</span>
               <span className="h">x-cc-decision-id</span>
             </div>

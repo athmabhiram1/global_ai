@@ -72,18 +72,26 @@ export default function Landing() {
       window.removeEventListener("keydown", onKey);
       io?.disconnect();
     };
+    // Mount-once boot: fetch the live ledger, wire ⌘K. Router identity is
+    // intentionally not a dep (stable in production, mocked in tests).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const s = statsOf(rows);
   const booted = live !== null;
+  const goTour = () => router.push("/console?tour=1");
 
   return (
     <main id="pg-landing" className="page active">
       <div id="toasts" role="status" aria-live="polite"></div>
       <header className="lnav">
         <div className="wrap in">
-          <Link className="logo" href="/" aria-label="Context Curator home">
-            <svg className="logo-svg" viewBox="0 0 32 34" aria-hidden="true">
+          <Link
+            className="logo"
+            href="/"
+            aria-label="Context Curator home"
+          >
+            <svg viewBox="0 0 32 34" aria-hidden="true">
               <path
                 d="M16 2 L29 9.5 V24.5 L16 32 L3 24.5 V9.5 Z"
                 fill="none"
@@ -103,53 +111,29 @@ export default function Landing() {
             <b>Context Curator</b>
             <small>v2</small>
           </Link>
-          <nav aria-label="Sections">
-            <button
-              onClick={() => router.push("/console#ov-traces")}
-            >
-              Traces
-            </button>
-            <button onClick={() => router.push("/console#ov-autopsy")}>
-              Autopsy
-            </button>
-            <button onClick={() => router.push("/console#ov-sources")}>
-              Sources
-            </button>
-            <button onClick={() => router.push("/console#ov-policy")}>
-              Policy
-            </button>
-          </nav>
           <div className="right">
-            <button
-              className="kchip"
-              id="lnav-k"
-              aria-label="Search — open console"
-              onClick={() => router.push("/console")}
-            >
+            <button className="btn acc sm" onClick={goTour}>
               <svg className="ic" viewBox="0 0 24 24">
-                <circle cx="11" cy="11" r="7" />
-                <path d="M21 21l-4.3-4.3" />
-              </svg>
-              <span>Search</span>
-              <kbd>⌘K</kbd>
+                <path d="M7 5l12 7-12 7z" />
+              </svg>{" "}
+              Guided tour
             </button>
-            <Link className="btn pri" href="/console">
+            <Link className="btn pri sm" href="/console">
               Open console
             </Link>
           </div>
         </div>
       </header>
 
-      <Hero />
-      <Graph admitted={s.admitted} killed={s.killed} live={live === true} />
+      <div className="hero-grid wrap">
+        <Hero onTour={goTour} />
+        <Graph admitted={s.admitted} killed={s.killed} live={live === true} />
+      </div>
       <Stats s={s} />
 
-      <footer className="lfoot">
+      <footer className="lfoot wrap">
         <span>© 2026 Context Curator — a Bifrost gateway plugin</span>
-        <span className="fq">
-          “Compression asks how few tokens. We ask which sources are allowed to
-          speak.”
-        </span>
+        <span className="fq">“Which sources are allowed to speak.”</span>
         <span className="sp"></span>
         <span>
           <span
@@ -162,8 +146,7 @@ export default function Landing() {
               : live
                 ? "sidecar connected"
                 : "sidecar unreachable — console shows disconnected state"}
-          </span>{" "}
-          · <kbd>⌘K</kbd> · guided demo: <kbd>?demo=1</kbd>
+          </span>
         </span>
       </footer>
     </main>

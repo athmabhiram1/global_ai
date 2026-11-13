@@ -1,15 +1,18 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { ChunkCard, DecisionDrawerView } from "./console/Drawer";
 import { AutopsyResultView } from "./console/Autopsy";
+import AutopsySection from "./console/AutopsySection";
 import { ModeSeg, PolicyView } from "./console/Policy";
-import { SourcesTable } from "./console/Sources";
+import SourcesSection, { SourcesTable } from "./console/Sources";
 import { api } from "../lib/api";
 import {
   autopsyFixture,
   chunkRecordFixture,
   decisionDetailFixture,
+  decisionListItemFixture,
+  decisionRowFixture,
   repItemFixture,
   stubFetch,
 } from "../lib/testFixtures";
@@ -268,5 +271,214 @@ describe("Template parity: policy surface", () => {
     );
     expect(screen.getByText(/Claim extraction is not configured/)).toBeTruthy();
     expect(screen.getByText(/Replay is unavailable/)).toBeTruthy();
+  });
+});
+
+describe("Template parity: drawer flame groups", () => {
+  it("groups lanes under parents scaled to the parent span", () => {
+    render(
+      <DecisionDrawerView detail={decisionDetailFixture} onAutopsy={() => {}} />,
+    );
+    const groups = document.querySelectorAll(".flame .fgrp");
+    expect(groups.length).toBeGreaterThanOrEqual(2);
+    const parent = document.querySelector(
+      ".flame .fgrp .frow.parent .fbar",
+    ) as HTMLElement;
+    expect(parent.style.width).toBe("100%");
+    expect(
+      document.querySelector(".flame")?.textContent,
+    ).toContain("PreRequestHook");
+  });
+});
+
+describe("Template parity: drawer chunk + claim copy", () => {
+  it("prefixes drop reasons with 'reason:'", () => {
+    render(
+      <ChunkCard
+        chunk={{ id: "c3", dom: "blog.example.com", verdict: "drop", reason: "stale" }}
+        onAutopsy={() => {}}
+      />,
+    );
+    expect(screen.getByText(/reason: stale/)).toBeTruthy();
+  });
+
+  it("leaves the score blank when the sidecar sent none", () => {
+    render(
+      <ChunkCard
+        chunk={{ id: "c9", dom: "c9", verdict: "keep" }}
+        onAutopsy={() => {}}
+      />,
+    );
+    expect(
+      document.querySelector('[data-testid="chunk-c9"] .sc')?.textContent,
+    ).toBe("");
+  });
+
+  it("labels the claim panel FR-9 off-path", () => {
+    render(
+      <DecisionDrawerView
+        detail={{
+          ...decisionDetailFixture,
+          claims: [
+            {
+              text: "Acme Pro costs $49 per seat.",
+              source: "c1",
+              freshness: 0.9,
+              evidence: ["docs.example.com"],
+            },
+          ],
+        }}
+        onAutopsy={() => {}}
+      />,
+    );
+    expect(document.querySelector(".d-sec h4")?.textContent).toContain(
+      "Decision",
+    );
+    expect(screen.getByText(/FR-9 · off-path/).textContent).not.toContain(
+      "sidecar",
+    );
+  });
+});
+
+describe("Template parity: sources table", () => {
+  it("renders the explainer row above the table", () => {
+    render(<SourcesSection rows={[repItemFixture]} onChanged={() => {}} />);
+    const expl = document.querySelector(".expl");
+    expect(expl).toBeTruthy();
+    expect(expl!.querySelectorAll(".ex").length).toBe(3);
+  });
+
+  it("uses the 5-column template header and α/β + ratio utility copy", () => {
+    render(
+      <SourcesTable
+        rows={[repItemFixture]}
+        onGood={() => {}}
+        onBad={() => {}}
+        onDeny={() => {}}
+        onReset={() => {}}
+      />,
+    );
+    const head = document.querySelector(".rhead")!;
+    expect(head.children.length).toBe(5);
+    expect(head.textContent).toContain("Learned in");
+    expect(document.querySelector(".rrow .ab")?.textContent).toContain("α");
+    expect(document.querySelector(".rrow .ab")?.textContent).toContain("β");
+    expect(document.querySelector(".rrow .upct")?.textContent).toBe("0.70");
+  });
+
+  it("deny toggles: an already-denied domain posts denied=false", async () => {
+    const { fetchFn, calls } = stubFetch(
+      () =>
+        new Response(JSON.stringify({ Domain: "x", Denied: false }), {
+          status: 200,
+        }),
+    );
+    vi.stubGlobal("fetch", fetchFn);
+    const onChanged = vi.fn();
+    render(
+      <SourcesSection
+        rows={[{ ...repItemFixture, denied: true }]}
+        onChanged={onChanged}
+      />,
+    );
+    fireEvent.click(screen.getByTestId(`deny-${repItemFixture.domain}`));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({
+      domain: repItemFixture.domain,
+      denied: false,
+    });
+  });
+});
+
+describe("Template parity: autopsy proof honesty", () => {
+  it("derives replay log lines strictly from the result (no invented transport)", () => {
+    render(<AutopsyResultView result={autopsyFixture} chunkId="c1" requestId="rq-1" />);
+    const log = document.querySelector("#aut-log")!.textContent!;
+    expect(log).toContain("rq-1");
+    expect(log).toContain("c1");
+    expect(log).not.toContain("sqlite ok");
+    expect(log).not.toContain("200");
+    expect(log).toContain("0.25");
+  });
+
+  it("tags with-side sentences with the chunk and without-side as corrected", () => {
+    const both = {
+      ...autopsyFixture,
+      without_sentences: [
+        "Acme Pro costs $49 per seat.",
+        "Metered billing shipped.",
+      ],
+    };
+    render(<AutopsyResultView result={both} chunkId="c1" />);
+    expect(document.querySelector("#aut-with-h")!.textContent!).toContain("c1");
+    expect(document.querySelector("#aut-without-h")!.textContent!).toContain(
+      "c1",
+    );
+    const tags = [...document.querySelectorAll(".mtag")].map(
+      (el) => el.textContent,
+    );
+    expect(tags.some((t) => t?.includes("c1"))).toBe(true);
+    expect(tags).toContain("corrected");
+  });
+
+  it("highlights the chunk id inside the quote", () => {
+    render(
+      <AutopsyResultView
+        result={{
+          ...autopsyFixture,
+          quote: "It wasn't the model. It was chunk c1.",
+        }}
+        chunkId="c1"
+      />,
+    );
+    expect(document.querySelector("#aut-quote em")?.textContent).toBe("c1");
+  });
+
+  it("shows the API verbatim error for dropped chunks, never a fake replay", async () => {
+    const { fetchFn } = stubFetch((url) =>
+      url.endsWith("/api/cc/api/context-curator/autopsy")
+        ? new Response("chunk c3 was not retained", { status: 422 })
+        : new Response(JSON.stringify([decisionRowFixture]), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchFn);
+    const rows = [
+      {
+        ...decisionListItemFixture,
+        id: "rq-1",
+        _raw: decisionRowFixture,
+        _live: true as const,
+      },
+    ];
+    render(<AutopsySection rows={rows} />);
+    await waitFor(() =>
+      expect(screen.queryByTestId("ablate-c3")).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByTestId("ablate-c3"));
+    fireEvent.click(screen.getByTestId("autopsy-run"));
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain("not retained"),
+    );
+    expect(screen.getByRole("alert").textContent).not.toContain(
+      "Replay is unavailable",
+    );
+    expect(document.querySelectorAll("#aut-influence").length).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("Template parity: policy hookstrip", () => {
+  it("matches the template hook order with PreRequest current", () => {
+    render(
+      <PolicyView
+        mode="rewrite"
+        summary={{ effective_mode: "rewrite" }}
+        raw="mode: rewrite"
+        denied={[]}
+        onMode={() => {}}
+      />,
+    );
+    const strip = document.querySelector(".hookstrip")!.textContent!;
+    expect(strip).toContain("PreRequest");
+    expect(strip).toContain("x-cc-decision-id");
+    expect(strip).not.toContain("curator");
   });
 });

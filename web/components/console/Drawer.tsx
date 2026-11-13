@@ -18,17 +18,21 @@ function Score({ label, v }: { label: string; v: number | undefined }) {
   );
 }
 
-interface FlameRow {
+interface FlameKid {
   name: string;
   ms: number;
   cls: string;
-  parent: boolean;
-  start: number;
-  ind: number;
+}
+
+export interface FlameGroup {
+  name: string;
+  ms: number;
+  cls: string;
+  kids: FlameKid[];
 }
 
 export function buildFlame(detail: DecisionDetail): {
-  rows: FlameRow[];
+  groups: FlameGroup[];
   total: number;
 } {
   const hook = Math.max(4.2, detail.ms || 8);
@@ -56,42 +60,72 @@ export function buildFlame(detail: DecisionDetail): {
   const fb = detail.transport === "http";
   const post = 1.2;
   const total = hook + prov + post;
-  const rows: FlameRow[] = [
-    { name: "PreRequestHook", ms: hook, cls: "", parent: true, start: 0, ind: 0 },
-    ...kids.map(([name, ms, cls]) => ({
-      name,
-      ms,
-      cls,
-      parent: false,
-      start: 0,
-      ind: 16,
-    })),
-    {
-      name: `POST /v1/chat/completions · ${detail.transport ? detail.transport : "openai/gpt-4o"}`,
-      ms: prov,
-      cls: "p",
-      parent: true,
-      start: hook,
-      ind: 0,
-    },
-  ];
-  if (fb) {
-    rows.push(
-      { name: "attempt 1 · 429 rate-limited", ms: +(prov * 0.42).toFixed(0), cls: "f", parent: false, start: hook, ind: 16 },
-      { name: "attempt 2 · 200", ms: +(prov * 0.58).toFixed(0), cls: "p", parent: false, start: hook + prov * 0.42, ind: 16 },
-    );
-  } else {
-    rows.push({ name: "attempt 1 · 200", ms: prov, cls: "p", parent: false, start: hook, ind: 16 });
-  }
-  rows.push({
-    name: "PostLLMHook · persist → sqlite",
-    ms: post,
-    cls: "",
-    parent: true,
-    start: hook + prov,
-    ind: 0,
-  });
-  return { rows, total };
+  const attempts: FlameKid[] = fb
+    ? [
+        { name: "attempt 1 · 429 rate-limited", ms: +(prov * 0.42).toFixed(0), cls: "f" },
+        { name: "attempt 2 · 200", ms: +(prov * 0.58).toFixed(0), cls: "p" },
+      ]
+    : [{ name: "attempt 1 · 200", ms: prov, cls: "p" }];
+  return {
+    groups: [
+      {
+        name: "PreRequestHook",
+        ms: hook,
+        cls: "",
+        kids: kids.map(([name, ms, cls]) => ({ name, ms, cls })),
+      },
+      {
+        name: `POST /v1/chat/completions · ${detail.transport ? detail.transport : "openai/gpt-4o"}`,
+        ms: prov,
+        cls: "p",
+        kids: attempts,
+      },
+      { name: "PostLLMHook · persist → sqlite", ms: post, cls: "", kids: [] },
+    ],
+    total,
+  };
+}
+
+function fmtFlameMs(ms: number): string {
+  return `${ms >= 1 ? ms.toFixed(ms < 10 ? 1 : 0) : ms.toFixed(2)} ms`;
+}
+
+export function FlameGraph({ detail }: { detail: DecisionDetail }) {
+  const { groups } = buildFlame(detail);
+  return (
+    <div className="flame">
+      {groups.map((g) => {
+        const parentMs = Math.max(g.ms, ...g.kids.map((k) => k.ms));
+        return (
+          <div className="fgrp" key={g.name}>
+            <div className="frow parent">
+              <span className="fl parent-l">{g.name}</span>
+              <span className="ftrack">
+                <span className="fbar k" style={{ width: "100%" }} />
+              </span>
+              <span className="fms">{fmtFlameMs(g.ms)}</span>
+            </div>
+            {g.kids.map((k) => (
+              <div className="frow" key={k.name}>
+                <span className="fl" style={{ ["--ind" as string]: "16px" }}>
+                  {k.name}
+                </span>
+                <span className="ftrack">
+                  <span
+                    className={`fbar ${k.cls}`}
+                    style={{
+                      width: `${Math.max(1.2, (k.ms / parentMs) * 100).toFixed(1)}%`,
+                    }}
+                  />
+                </span>
+                <span className="fms">{fmtFlameMs(k.ms)}</span>
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 export function ChunkCard({
@@ -110,11 +144,9 @@ export function ChunkCard({
       <div className="ck-h">
         <span className="cid mono">{chunk.id}</span>
         <span className="cdm">{chunk.dom}</span>
-        {chunk.score !== undefined ? (
-          <span className="sc">{chunk.score.toFixed(3)}</span>
-        ) : (
-          <span className="sc">—</span>
-        )}
+        <span className="sc">
+          {chunk.score !== undefined ? chunk.score.toFixed(3) : ""}
+        </span>
         <span className={`chip ${chunk.verdict === "keep" ? "g" : "r"}`}>
           <span className="dot"></span>
           {chunk.verdict === "keep" ? "kept" : "killed"}
@@ -142,7 +174,7 @@ export function ChunkCard({
             <span>provenance {r.provenance || "—"}</span>
             <span className={r.refreshed ? "rf" : r.refresh_failed ? "rff" : ""}>
               {r.refreshed
-                ? "refreshed · tavily ✓"
+                ? "refreshed ✓"
                 : r.refresh_failed
                   ? "refresh failed"
                   : "not refreshed"}
@@ -184,7 +216,7 @@ export function ChunkCard({
         </>
       )}
       {chunk.reason && (
-        <div className="ck-why">killed: {chunk.reason}</div>
+        <div className="ck-why">reason: {chunk.reason}</div>
       )}
       {chunk.verdict === "keep" && (
         <div className="ck-act">
@@ -210,7 +242,6 @@ export function DecisionDrawerView({
 }) {
   const kept = detail.chunks.filter((c) => c.verdict === "keep");
   const dropped = detail.chunks.filter((c) => c.verdict === "drop");
-  const { rows: flame, total } = buildFlame(detail);
   const delta = detail.tin ? Math.round((1 - detail.tout / detail.tin) * 100) : 0;
   const pct = detail.tin ? Math.round((detail.tout / detail.tin) * 100) : 0;
   return (
@@ -268,34 +299,12 @@ export function DecisionDrawerView({
       </div>
       <div className="d-sec">
         <h4>
-          Execution trace <span className="r">spans · ms</span>
+          Execution trace <span className="r">each lane scaled to its parent</span>
         </h4>
-        <div className="flame">
-          {flame.map((r) => (
-            <div
-              key={r.name}
-              className={`frow${r.parent ? " parent" : ""}`}
-            >
-              <span
-                className={`fl${r.parent ? " parent-l" : ""}`}
-                style={{ ["--ind" as string]: `${r.ind}px` }}
-              >
-                {r.name}
-              </span>
-              <span className="ftrack">
-                <span
-                  className={`fbar ${r.cls}`}
-                  style={{
-                    left: `${((r.start / total) * 100).toFixed(2)}%`,
-                    width: `${Math.max(0.8, (r.ms / total) * 100).toFixed(2)}%`,
-                  }}
-                />
-              </span>
-              <span className="fms">
-                {r.ms >= 1 ? r.ms.toFixed(r.ms < 10 ? 1 : 0) : r.ms.toFixed(2)} ms
-              </span>
-            </div>
-          ))}
+        <FlameGraph detail={detail} />
+        <div className="fcap">
+          Sub-ms hook stages are scaled to the PreRequestHook span — the provider
+          call is scaled separately, so both stay readable.
         </div>
       </div>
       <div className="d-sec">
@@ -312,7 +321,7 @@ export function DecisionDrawerView({
       </div>
       <div className="d-sec">
         <h4>
-          Claim freshness <span className="r">FR-9 · off-path · sidecar</span>
+          Claim freshness <span className="r">FR-9 · off-path</span>
         </h4>
         {detail.claims.length > 0 ? (
           detail.claims.map((claim, i) => {
@@ -329,8 +338,11 @@ export function DecisionDrawerView({
                     {lbl} {claim.freshness.toFixed(2)}
                   </span>
                   <span className="ev">
-                    evidence: {claim.evidence.join(", ")} · via {claim.source}
+                    {claim.evidence.join(", ")} · via {claim.source}
                   </span>
+                  {claim.conflict && (
+                    <span className="cf">⚠ {claim.conflict}</span>
+                  )}
                 </div>
               </div>
             );

@@ -70,11 +70,15 @@ export default function AutopsySection({
       setResult(await api.autopsy(decisionId, chunkId));
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      // No replayer configured surfaces as an upstream failure: say so.
+      // A dropped chunk was never retained, so there is nothing to ablate:
+      // surface the API's refusal verbatim instead of inventing a replay.
+      // Only genuine transport/replayer failures get the unavailable label.
       setError(
-        /replay|replayer|gateway|upstream|502|503/i.test(msg)
-          ? `Replay is unavailable: ${msg}`
-          : msg,
+        /not[\s_-]?retained/i.test(msg) || /was killed at admission/i.test(msg)
+          ? msg
+          : /replay|replayer|gateway|upstream|502|503/i.test(msg)
+            ? `Replay is unavailable: ${msg}`
+            : msg,
       );
     } finally {
       setRunning(false);
@@ -159,14 +163,6 @@ export default function AutopsySection({
               Retry
             </button>
           </p>
-        )}
-        {result && (
-          <div className="influ">
-            <div className="n" id="aut-influence">
-              {result.influence.toFixed(2)}
-            </div>
-            <p id="aut-changed">influence · changed / total sentences</p>
-          </div>
         )}
       </div>
       <div>

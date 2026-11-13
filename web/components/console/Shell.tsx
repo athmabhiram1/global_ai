@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { JSX } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import type { ComponentType } from "react";
 import { useDecisions, useReputation } from "../../lib/hooks";
 import { api } from "../../lib/api";
+import { isDemoStart } from "../../lib/tour";
 import Drawer from "./Drawer";
 import TracesSection from "./Traces";
 import AutopsySection from "./AutopsySection";
@@ -11,29 +12,105 @@ import SourcesSection from "./Sources";
 import PolicySection from "./Policy";
 import { OverviewKPIs, MeasuredStrip } from "./Overview";
 
-const RAIL_ICONS: Record<string, JSX.Element> = {
-  "ov-overview": (<svg className="ic" viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5" /><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5" /><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5" /><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5" /></svg>),
-  "ov-traces": (<svg className="ic" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16" /></svg>),
-  "ov-autopsy": (<svg className="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M12 4v16" /></svg>),
-  "ov-sources": (<svg className="ic" viewBox="0 0 24 24"><path d="M4 19V5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z" /><path d="M4 19a2 2 0 0 0 2 2h13" /></svg>),
-  "ov-policy": (<svg className="ic" viewBox="0 0 24 24"><path d="M4 8h10M18 8h2M4 16h2M10 16h10" /><circle cx="15" cy="8" r="2.2" /><circle cx="7" cy="16" r="2.2" /></svg>),
-};
-
-const SECTIONS = [
-  { id: "ov-overview", no: "01", label: "Overview" },
-  { id: "ov-traces", no: "02", label: "Admission traces" },
-  { id: "ov-autopsy", no: "03", label: "Autopsy" },
-  { id: "ov-sources", no: "04", label: "Source reputation" },
-  { id: "ov-policy", no: "05", label: "Policy" },
+const NAV = [
+  {
+    id: "traces",
+    label: "Traces",
+    icon: (
+      <svg className="ic" viewBox="0 0 24 24">
+        <path d="M4 6h16M4 12h16M4 18h16" />
+      </svg>
+    ),
+  },
+  {
+    id: "autopsy",
+    label: "Autopsy",
+    icon: (
+      <svg className="ic" viewBox="0 0 24 24">
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="M12 4v16" />
+      </svg>
+    ),
+  },
+  {
+    id: "sources",
+    label: "Sources",
+    icon: (
+      <svg className="ic" viewBox="0 0 24 24">
+        <path d="M4 19V5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z" />
+        <path d="M4 19a2 2 0 0 0 2 2h13" />
+      </svg>
+    ),
+  },
+  {
+    id: "policy",
+    label: "Policy",
+    icon: (
+      <svg className="ic" viewBox="0 0 24 24">
+        <path d="M4 8h10M18 8h2M4 16h2M10 16h10" />
+        <circle cx="15" cy="8" r="2.2" />
+        <circle cx="7" cy="16" r="2.2" />
+      </svg>
+    ),
+  },
+  {
+    id: "evals",
+    label: "Evals",
+    icon: (
+      <svg className="ic" viewBox="0 0 24 24">
+        <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
+      </svg>
+    ),
+  },
+  {
+    id: "playground",
+    label: "Playground",
+    icon: (
+      <svg className="ic" viewBox="0 0 24 24">
+        <path d="M8 5v14l11-7z" />
+      </svg>
+    ),
+  },
 ] as const;
+
+type Page = (typeof NAV)[number]["id"];
+
+// Evals + Playground load through a guarded boundary: the rejection handler
+// renders an honest fallback instead of breaking Shell if a chunk 404s.
+// @ts-ignore — keeps Vitest's transform from statically resolving the specifier.
+const EvalsSection = lazy(() =>
+  import(/* @vite-ignore */ "./Evals").then(
+    (m: { default: ComponentType }) => ({ default: m.default }),
+    () => ({
+      default: () => (
+        <p className="why">Evals are unavailable in this build.</p>
+      ),
+    }),
+  ),
+);
+
+// @ts-ignore — see note above.
+const PlaygroundSection = lazy(() =>
+  import(/* @vite-ignore */ "./Playground").then(
+    (m: { default: ComponentType }) => ({ default: m.default }),
+    () => ({
+      default: () => (
+        <p className="why">Playground is unavailable in this build.</p>
+      ),
+    }),
+  ),
+);
 
 function toast(msg: string, kind = "") {
   const box = document.getElementById("toasts");
   if (!box) return;
   const t = document.createElement("div");
   t.className = `toast ${kind}`;
-  t.innerHTML = `<span class="dot"></span><span></span>`;
-  t.querySelector("span:last-child")!.textContent = msg;
+  const dot = document.createElement("span");
+  dot.className = "dot";
+  const tx = document.createElement("span");
+  tx.textContent = msg;
+  t.append(dot, tx);
   box.appendChild(t);
   setTimeout(() => {
     t.classList.add("out");
@@ -41,10 +118,20 @@ function toast(msg: string, kind = "") {
   }, 3200);
 }
 
+function startTour() {
+  try {
+    window.dispatchEvent(new CustomEvent("cc-tour-start"));
+  } catch {}
+}
+
 function smoothTo(id: string) {
   const el = document.getElementById(id);
   if (!el) return;
-  el.scrollIntoView({ behavior: "smooth", block: "start" });
+  try {
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch {
+    el.scrollIntoView();
+  }
   el.classList.remove("flash");
   void el.offsetWidth;
   el.classList.add("flash");
@@ -62,38 +149,37 @@ function ScopeFilter({
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="scope scope-w">
+    <div className="scope scope-w" style={{ marginTop: 12 }}>
       <button
         id="scope-btn"
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
+        className="btn xs"
       >
-        <svg className="ic" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" /></svg>
         <span id="scope-label">
           {value === "all" ? "all policies" : value}
         </span>
-        <svg className="ic" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" /></svg>
       </button>
-      <div className={`menu${open ? " open" : ""}`} id="scope-menu" role="listbox">
-        <div className="mh">policy scope</div>
-        {["all", ...policies].map((p) => (
-          <button
-            key={p}
-            role="option"
-            aria-selected={value === p}
-            className={value === p ? "on" : ""}
-            onClick={() => {
-              onChange(p);
-              setOpen(false);
-              toast(`scope → ${p === "all" ? "all policies" : p}`);
-            }}
-          >
-            {p === "all" ? "all policies" : p}
-            <span className="ck">✓</span>
-          </button>
-        ))}
-      </div>
+      {open && (
+        <div className="menu open" id="scope-menu" role="listbox">
+          {["all", ...policies].map((p) => (
+            <button
+              key={p}
+              role="option"
+              aria-selected={value === p}
+              className={value === p ? "on" : ""}
+              onClick={() => {
+                onChange(p);
+                setOpen(false);
+                toast(`scope → ${p === "all" ? "all policies" : p}`);
+              }}
+            >
+              {p === "all" ? "all policies" : p}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -109,7 +195,7 @@ export default function Shell() {
   const [palQ, setPalQ] = useState("");
   const [palSel, setPalSel] = useState(0);
   const [modalOpen, setModalOpen] = useState(false);
-  const [cur, setCur] = useState("ov-overview");
+  const [cur, setCur] = useState<Page>("traces");
   const palInput = useRef<HTMLInputElement>(null);
 
   const rows = decisions.data;
@@ -140,6 +226,13 @@ export default function Shell() {
     } catch {}
   };
 
+  const go = (p: Page) => {
+    setCur(p);
+    const crumb = document.getElementById("top-crumb");
+    if (crumb) crumb.textContent = p;
+    smoothTo(`pv-${p}`);
+  };
+
   // ?decision= deep-link + #section anchor on mount
   useEffect(() => {
     try {
@@ -148,14 +241,16 @@ export default function Shell() {
       if (d) setOpenId(d);
       const h = window.location.hash.replace("#", "");
       if (h && document.getElementById(h)) {
+        const m = h.match(/^pv-(\w+)$/);
+        if (m) setCur(m[1] as Page);
         setTimeout(() => smoothTo(h), 120);
       }
     } catch {}
   }, []);
 
-  // rail .cur tracking via IntersectionObserver + crumb-sec
+  // .side .sitem .cur tracking + crumb label
   useEffect(() => {
-    const ids = SECTIONS.map((s) => s.id);
+    const ids = NAV.map((s) => `pv-${s.id}`);
     const els = ids
       .map((id) => document.getElementById(id))
       .filter((e): e is HTMLElement => !!e);
@@ -164,10 +259,12 @@ export default function Shell() {
       (es) => {
         es.forEach((e) => {
           if (e.isIntersecting) {
-            setCur(e.target.id);
-            const m = e.target.id.match(/^ov-(\w+)$/);
-            const crumb = document.getElementById("crumb-sec");
-            if (crumb && m) crumb.textContent = m[1];
+            const m = e.target.id.match(/^pv-(\w+)$/);
+            if (m) {
+              setCur(m[1] as Page);
+              const crumb = document.getElementById("top-crumb");
+              if (crumb) crumb.textContent = m[1];
+            }
           }
         });
       },
@@ -192,16 +289,7 @@ export default function Shell() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  // cc-toast events from drawer
-  useEffect(() => {
-    const onToast = (e: Event) => {
-      const msg = (e as CustomEvent).detail as string;
-      if (msg) toast(msg, "ok");
-    };
-    window.addEventListener("cc-toast", onToast);
-    return () => window.removeEventListener("cc-toast", onToast);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -212,25 +300,39 @@ export default function Shell() {
     }
   }, [palOpen]);
 
+  const retry = () => {
+    decisions.refresh();
+    reputation.refresh();
+  };
+
   const setModeFromPalette = (m: "annotate" | "rewrite" | "block") => {
-    smoothTo("ov-policy");
+    go("policy");
     setTimeout(() => {
       const b = document.querySelector<HTMLButtonElement>(
         `.seg [data-mode="${m}"]`,
       );
       if (b) b.click();
-      else toast(`policy mode → ${m}`);
+      else {
+        api
+          .setMode(m)
+          .then(() => {
+            reputation.refresh();
+            toast(`policy mode → ${m}`, "ok");
+          })
+          .catch(() => toast("mode switch failed — sidecar unreachable", "bad"));
+      }
     }, 400);
   };
 
   const palItems: PalItem[] = useMemo(() => {
     const items: PalItem[] = [];
     items.push(
-      { g: "Navigate", label: "01 · Overview", d: "G 1", run: () => smoothTo("ov-overview") },
-      { g: "Navigate", label: "02 · Admission traces", d: "G 2", run: () => smoothTo("ov-traces") },
-      { g: "Navigate", label: "03 · Autopsy — counterfactual proof", d: "G 3", run: () => smoothTo("ov-autopsy") },
-      { g: "Navigate", label: "04 · Source reputation", d: "G 4", run: () => smoothTo("ov-sources") },
-      { g: "Navigate", label: "05 · Policy — resolved config", d: "G 5", run: () => smoothTo("ov-policy") },
+      { g: "Pages", label: "Traces", d: "admission ledger", run: () => go("traces") },
+      { g: "Pages", label: "Autopsy", d: "counterfactual proof", run: () => go("autopsy") },
+      { g: "Pages", label: "Sources", d: "reputation table", run: () => go("sources") },
+      { g: "Pages", label: "Policy", d: "resolved config", run: () => go("policy") },
+      { g: "Pages", label: "Evals", d: "committed before/after results", run: () => go("evals") },
+      { g: "Pages", label: "Playground", d: "sample A/B in demo, disabled live", run: () => go("playground") },
     );
     (scoped || []).slice(0, 10).forEach((d) =>
       items.push({
@@ -238,7 +340,7 @@ export default function Shell() {
         label: `${d.id} — ${d.app}`,
         d: `${d.cin}→${d.cout} chunks`,
         run: () => {
-          smoothTo("ov-traces");
+          go("traces");
           setTimeout(() => openDecision(d.id), 350);
         },
       }),
@@ -264,17 +366,17 @@ export default function Shell() {
               toast("content-farm.example hard-denied — enforced before any model call", "bad");
             })
             .catch(() => toast("deny failed — sidecar unreachable", "bad"));
-          smoothTo("ov-sources");
+          go("sources");
         },
       },
       {
         g: "Actions",
-        label: "Reset layout of the hero graph",
+        label: "Reset layout",
         d: "",
         run: () => toast("layout reset"),
       },
       { g: "Actions", label: "Connect real backend…", d: "CC_ADMIN_TOKEN", run: () => setModalOpen(true) },
-      { g: "Actions", label: "Retry ledger fetch", d: "", run: () => decisions.refresh() },
+      { g: "Actions", label: "Retry ledger fetch", d: "", run: () => retry() },
     );
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -295,40 +397,77 @@ export default function Shell() {
     it.run();
   };
 
+  const connected = decisions.connected;
+
+  let demo = false;
+  try {
+    demo = isDemoStart(window.location.search);
+  } catch {
+    demo = false;
+  }
+
   return (
-    <main id="pg-app" className="page active">
+    <main id="pg-console" className="page active">
       <div id="toasts" role="status" aria-live="polite"></div>
       <header className="topbar">
         <div className="wrap in">
           <div className="crumb">
             <b>context-curator</b>
             <span className="sep">/</span>
-            <span>console</span>
-            <span className="sep">/</span>
-            <span id="crumb-sec">overview</span>
+            <span className="pg" id="top-crumb">
+              {cur}
+            </span>
           </div>
-          <ScopeFilter policies={policies} value={scope} onChange={setScope} />
           <div className="right">
-            {decisions.connected ? (
+            <button
+              className="btn acc sm"
+              data-testid="tour-open"
+              onClick={startTour}
+            >
+              <svg className="ic" viewBox="0 0 24 24">
+                <path d="M7 5l12 7-12 7z" />
+              </svg>{" "}
+              Tour
+            </button>
+            {connected ? (
               <button
                 id="sim-badge"
                 title="Sidecar connected — data is live"
-                onClick={decisions.refresh}
+                onClick={() => setModalOpen(true)}
               >
-                <span className="dot"></span>LIVE — REFRESH
+                <span className="dot"></span>LIVE
               </button>
             ) : (
               <button
                 id="sim-badge"
-                title="Sidecar unreachable — showing last successful data"
-                onClick={decisions.refresh}
+                title={
+                  demo
+                    ? "Sidecar unreachable — showing demo seed data (?demo=1). Remove ?demo for live sidecar data."
+                    : "Sidecar unreachable — showing last successful data"
+                }
+                onClick={retry}
                 data-testid="disconnected-chip"
               >
-                <span className="dot"></span>DISCONNECTED — RETRY
+                <span className="dot"></span>DISCONNECTED — RETRY{demo ? " · ?demo=1" : ""}
               </button>
             )}
-            <button id="btn-k" onClick={() => setPalOpen(true)} aria-label="Command palette">
-              <svg className="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
+            {demo && (
+              <span
+                id="demo-badge"
+                title="Demo mode — seeded sample data (?demo=1). Remove ?demo for live sidecar data."
+              >
+                SIM
+              </span>
+            )}
+            <button
+              id="btn-k"
+              onClick={() => setPalOpen(true)}
+              aria-label="Command palette"
+            >
+              <svg className="ic" viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="7" />
+                <path d="M21 21l-4.3-4.3" />
+              </svg>
               <kbd>⌘K</kbd>
             </button>
           </div>
@@ -336,147 +475,164 @@ export default function Shell() {
       </header>
 
       <div className="shell">
-        <aside className="rail" aria-label="Console sections">
-          {SECTIONS.map((s) => (
+        <aside className="side" aria-label="Console navigation">
+          <div className="side-label">Console</div>
+          {NAV.map((s) => (
             <button
               key={s.id}
-              data-sec={s.id}
-              className={cur === s.id ? "cur" : ""}
-              title={s.label}
-              onClick={() => smoothTo(s.id)}
+              className={`sitem${cur === s.id ? " cur" : ""}`}
+              data-page={s.id}
+              onClick={() => go(s.id)}
             >
-              {RAIL_ICONS[s.id]}
+              {s.icon}
+              {s.label}
             </button>
           ))}
-          <div className="rsep"></div>
+          <div className="side-sp"></div>
+          <button className="sitem sp2" data-testid="tour-open-side" onClick={startTour}>
+            <svg className="ic" viewBox="0 0 24 24">
+              <path d="M7 5l12 7-12 7z" />
+            </svg>
+            Guided tour
+          </button>
           <button
-            id="rail-connect"
-            title="Connect backend"
-            onClick={() => setModalOpen(true)}
+            className="sitem"
+            onClick={() => {
+              window.location.href = "/";
+            }}
           >
-            <svg className="ic" viewBox="0 0 24 24"><path d="M9 7l-4 5 4 5M15 7l4 5-4 5" /></svg>
+            <svg className="ic" viewBox="0 0 24 24">
+              <path d="M3 11l9-8 9 8v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+            </svg>
+            Front page
           </button>
         </aside>
 
         <div className="content">
-          <section id="ov-overview">
-            <div className="sec-h">
-              <span className="no">01</span>
-              <h2>Overview</h2>
-              <span className="note">triage · last 24 h · policy-scope aware</span>
+          <section id="pv-traces" className={`pv${cur === "traces" ? " on" : ""}`}>
+            <div className="pv-head">
+              <h2>Admission traces</h2>
+              <p className="why">
+                One decision per request, made in <b>PreRequestHook</b> before
+                any model call.
+              </p>
+              <div className="keyline">
+                <span className="kd g">
+                  <i></i>reached the model
+                </span>
+                <span className="kd r">
+                  <i></i>killed with a reason
+                </span>
+                <span className="kd a">
+                  <i></i>tavily refresh spent
+                </span>
+              </div>
+              <ScopeFilter policies={policies} value={scope} onChange={setScope} />
             </div>
-            <p className="lede">
-              The admission layer in one glance: what the gate is doing to
-              context, what it costs, and where it hurts. Every number below is
-              computed from the same ledger the <span className="m">PostLLMHook</span>{" "}
-              writes to SQLite.
-            </p>
-            {!decisions.connected && decisions.error && (
-              <p className="lede" role="alert">
+            {!connected && decisions.error && (
+              <p className="why" role="alert">
                 Sidecar unreachable ({decisions.error}). Showing last
-                successful data.
+                successful data.{demo ? " Demo seed (?demo=1) — remove ?demo for live sidecar data." : ""}{" "}
+                <button className="btn xs" onClick={retry}>
+                  Retry
+                </button>
               </p>
             )}
-            {scoped === null && decisions.connected && (
-              <p className="lede">Loading…</p>
-            )}
-            {scoped !== null && scoped.length === 0 && rows !== null && (
-              <p className="lede">No admissions recorded yet.</p>
+            {scoped === null && connected && <p className="why">Loading…</p>}
+            {scoped !== null && scoped.length === 0 && (
+              <p className="why">No admissions recorded yet.</p>
             )}
             {scoped !== null && scoped.length > 0 && (
               <OverviewKPIs rows={scoped} />
             )}
+            <TracesSection
+              rows={scoped}
+              total={rows?.length ?? 0}
+              onOpen={openDecision}
+            />
+            <MeasuredStrip />
           </section>
 
-          <section id="ov-traces">
-            <div className="sec-h">
-              <span className="no">02</span>
-              <h2>Admission traces</h2>
-              <span className="note">decisions table · written by PostLLMHook · WAL</span>
-            </div>
-            <p className="lede">
-              One row per request. <b>Click a row</b> — it morphs into the
-              decision file: scorecards, the flame graph of the hook pipeline,
-              and per-claim freshness. Live traffic is polled at ~5 s
-              intervals.
-            </p>
-            <TracesSection rows={scoped} total={rows?.length ?? 0} onOpen={openDecision} />
-            <div className="measured">
-              <span className="tag">Eval · 50 questions</span>
-              <span>
-                tokens <b>−12.0%</b>
-              </span>
-              <span>
-                mean latency <b>8 ms</b>
-              </span>
-              <span>
-                stale-source acc <b>+52.0 pp</b>
-              </span>
-              <span>
-                raw <b>0.480 → 1.000</b>
-              </span>
-              <span>
-                reasoned drops <b>100%</b>
-              </span>
-              <small>every claim must come from eval/results.md before submission</small>
-            </div>
-          </section>
-
-          <section id="ov-autopsy">
-            <div className="sec-h">
-              <span className="no">03</span>
+          <section id="pv-autopsy" className={`pv${cur === "autopsy" ? " on" : ""}`}>
+            <div className="pv-head">
               <h2>Autopsy</h2>
-              <span className="note">counterfactual replay · temp 0 · never on the serving path</span>
+              <p className="why">
+                <b>Proof by removal.</b> Replays the request with and without
+                one chunk — temperature 0, off the serving path.
+              </p>
             </div>
-            <p className="lede">
-              The proof. Pick a retained chunk; the sidecar replays the request{" "}
-              <b>with</b> and <b>without</b> it, aligns both answers
-              sentence-by-sentence (LCS), and files an influence score. Max 5
-              ablations per call, cached 60 min.
-            </p>
             <AutopsySection rows={scoped} />
           </section>
 
-          <section id="ov-sources">
-            <div className="sec-h">
-              <span className="no">04</span>
+          <section id="pv-sources" className={`pv${cur === "sources" ? " on" : ""}`}>
+            <div className="pv-head">
               <h2>Source reputation</h2>
-              <span className="note">Beta(α, β) · one table · every app behind the gateway</span>
+              <p className="why">
+                <b>One table, every app.</b> A domain the support bot burned is
+                already distrusted by the research agent.
+              </p>
             </div>
-            <p className="lede">
-              Utility is the posterior mean{" "}
-              <span className="m">α / (α+β)</span>, read live by the scorer.
-              Feedback here is <b>not siloed per app</b> — deny hard-blocks at
-              admission.
-            </p>
             {!reputation.connected && reputation.error && (
-              <p className="lede" role="alert">
-                Sidecar unreachable ({reputation.error}).
+              <p className="why" role="alert">
+                Sidecar unreachable ({reputation.error}).{" "}
+                <button className="btn xs" onClick={retry}>
+                  Retry
+                </button>
               </p>
             )}
             <SourcesSection rows={reputation.data} onChanged={reputation.refresh} />
           </section>
 
-          <section id="ov-policy">
-            <div className="sec-h">
-              <span className="no">05</span>
+          <section id="pv-policy" className={`pv${cur === "policy" ? " on" : ""}`}>
+            <div className="pv-head">
               <h2>Policy</h2>
-              <span className="note">resolved virtual key → route → default</span>
+              <p className="why">
+                The rulebook the gate enforces, resolved{" "}
+                <b>virtual key → route → default</b>. The kill list is live.
+              </p>
             </div>
-            <p className="lede">
-              One document, enforced in the request path. The kill list below
-              is <b>live</b> — deny a domain in §04 and it lands here before
-              any model call is made.
-            </p>
             <PolicySection denied={denied} onChanged={reputation.refresh} />
           </section>
 
-          <MeasuredStrip />
+          <section id="pv-evals" className={`pv${cur === "evals" ? " on" : ""}`}>
+            <div className="pv-head">
+              <h2>Evals</h2>
+              <p className="why">
+                Pass/fail checks computed from the ledger — labeled seed
+                rows under <b>?demo=1</b>, live sidecar rows otherwise.
+              </p>
+            </div>
+            <Suspense fallback={<p className="why">Loading…</p>}>
+              <EvalsSection />
+            </Suspense>
+          </section>
+
+          <section id="pv-playground" className={`pv${cur === "playground" ? " on" : ""}`}>
+            <div className="pv-head">
+              <h2>Playground</h2>
+              <p className="why">
+                Probe the sidecar with ad-hoc prompts and watch admission
+                decisions form — exploratory, nothing here is stored.
+              </p>
+            </div>
+            <Suspense fallback={<p className="why">Loading…</p>}>
+              <PlaygroundSection />
+            </Suspense>
+          </section>
 
           <footer id="app-foot">
-            <span>context-curator console · live ledger</span>
+            <span>bifrost-http :8080</span>
+            <span>cc-sidecar :8090</span>
+            <span className="fq">“It wasn’t the model. It was chunk c7.”</span>
             <span className="sp"></span>
-            <span className="fq">every claim must come from eval/results.md</span>
+            <button
+              className="btn sm"
+              onClick={() => {
+                window.location.href = "/";
+              }}
+            >
+              ← Front page
+            </button>
           </footer>
         </div>
       </div>
@@ -484,11 +640,14 @@ export default function Shell() {
       {openId && <Drawer requestId={openId} onClose={closeDecision} />}
 
       {palOpen && (
-        <div id="pal" className="open">
-          <div className="p-scrim" onClick={() => setPalOpen(false)} />
-          <div className="p-box" role="dialog" aria-label="Command palette">
+        <div id="pal" className="open" role="dialog" aria-modal="true" aria-label="Command palette">
+          <div className="p-scrim" data-pclose onClick={() => setPalOpen(false)} />
+          <div className="p-box">
             <div className="p-in">
-              <svg viewBox="0 0 24 24" className="ic"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
+              <svg viewBox="0 0 24 24" className="ic">
+                <circle cx="11" cy="11" r="7" />
+                <path d="M21 21l-4.3-4.3" />
+              </svg>
               <input
                 id="pal-in"
                 ref={palInput}
@@ -508,7 +667,7 @@ export default function Shell() {
                     palRun(palSel);
                   }
                 }}
-                placeholder="Search decisions, jump to sections, run actions…"
+                placeholder="Pages, decisions, actions…"
                 autoComplete="off"
                 spellCheck={false}
                 aria-label="Go to section"
@@ -538,7 +697,6 @@ export default function Shell() {
                         onClick={() => palRun(i)}
                         onMouseMove={() => setPalSel(i)}
                       >
-                        <span className="pi">⌘</span>
                         <span className="pl">{it.label}</span>
                         <span className="pd">{it.d}</span>
                       </div>
@@ -548,35 +706,38 @@ export default function Shell() {
               })()}
             </div>
             <div className="p-foot">
-              <span>↑↓ navigate</span>
-              <span>↵ select</span>
+              <span>↑↓</span>
+              <span>↵</span>
               <span className="sp"></span>
-              <span>esc to close</span>
+              <span>⌘K</span>
             </div>
           </div>
         </div>
       )}
 
       {modalOpen && (
-        <div id="modal" className="open">
-          <div className="m-scrim" onClick={() => setModalOpen(false)} />
-          <div className="m-box" role="dialog" aria-label="Connect backend" id="connect">
-            <button className="m-close" onClick={() => setModalOpen(false)}>
-              ✕
+        <div id="modal" className="open" role="dialog" aria-modal="true" aria-label="Connect the real backend">
+          <div className="m-scrim" data-mclose onClick={() => setModalOpen(false)} />
+          <div className="m-box">
+            <button className="m-close" data-mclose onClick={() => setModalOpen(false)} aria-label="Close">
+              <svg className="ic" viewBox="0 0 24 24">
+                <path d="M6 6l12 12M18 6L6 18" />
+              </svg>
             </button>
             <h3>Wire this console to the real sidecar</h3>
             <p className="msub">
-              Everything renders through one adapter (<span className="mono">CC</span> in the source). The mocks already return the exact
-              shapes documented in <span className="mono">docs/ARCHITECTURE.md §6 / §14</span> — going live is a config change, not a rewrite.
+              Every panel reads the live sidecar ledger through{" "}
+              <span className="mono">/api/cc/*</span>; with{" "}
+              <span className="mono">?demo=1</span> it reads labeled seed data
+              instead.
             </p>
             <div className="m-step">
               <span className="n">1</span>
               <div>
-                <h5>Point the adapter at your sidecar</h5>
+                <h5>Point the console at your sidecar</h5>
                 <p>
                   Serve this console from the sidecar <b>root</b> or set{" "}
-                  <b>CC_SIDECAR_URL</b> to your sidecar origin (default{" "}
-                  <b>http://127.0.0.1:8090</b>) with the same{" "}
+                  <b>CC_SIDECAR_URL</b> to your sidecar origin with the same{" "}
                   <b>CC_ADMIN_TOKEN</b>.
                 </p>
               </div>
@@ -597,8 +758,8 @@ export default function Shell() {
               <div>
                 <h5>Send a chat through Bifrost</h5>
                 <p>
-                  Decisions appear in <b>§02 traces</b> as rows are written to
-                  the ledger via <b>PostLLMHook</b>.
+                  Decisions appear in <b>traces</b> as rows are written to the
+                  ledger.
                 </p>
               </div>
             </div>
@@ -608,7 +769,8 @@ export default function Shell() {
                 id="btn-copy"
                 style={{ position: "absolute", top: 10, right: 10 }}
                 onClick={() => {
-                  const txt = document.getElementById("cfg-snippet")?.innerText || "";
+                  const txt =
+                    document.getElementById("cfg-snippet")?.innerText || "";
                   const done = () => toast("integration snippet copied", "ok");
                   if (navigator.clipboard?.writeText) {
                     navigator.clipboard.writeText(txt).then(done, done);
@@ -619,14 +781,14 @@ export default function Shell() {
               >
                 Copy
               </button>
-              <pre id="cfg-snippet">{`CC_SIDECAR_URL=http://127.0.0.1:8090
-CC_ADMIN_TOKEN=<same token the sidecar runs with>
-
+              <pre id="cfg-snippet">
+{`GET  /api/context-curator/policy
 GET  /api/context-curator/decisions
 GET  /api/context-curator/decisions/:id
 GET  /api/context-curator/reputation
 POST /api/context-curator/feedback   {domain, verdict}
-POST /api/context-curator/autopsy    {request_id, chunk_id}`}</pre>
+POST /api/context-curator/autopsy    {request_id, chunk_id}`}
+              </pre>
             </div>
           </div>
         </div>

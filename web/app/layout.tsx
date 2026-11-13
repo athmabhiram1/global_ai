@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "../src/console.css";
+import TourHost from "../components/tour/TourHost";
 
 // Self-hosted Geist via next/font/google: zero runtime external font
 // requests (no link to Google Fonts). The `variable` names bridge
@@ -35,7 +36,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${sans.variable} ${mono.variable}`}>
-      <body>{children}</body>
+      <body>
+        {children}
+        <TourHost />
+      </body>
     </html>
   );
 }

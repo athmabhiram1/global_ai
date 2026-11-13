@@ -196,7 +196,7 @@ export default function Graph({
   };
 
   return (
-    <div className="graph-outer">
+    <div className="hero-viz">
       <div className="graph-frame" id="graph-frame" ref={frameRef}>
         <canvas id="gcv" aria-hidden="true" ref={canvasRef} />
         {BASE.map((n, i) => (
@@ -269,12 +269,11 @@ export default function Graph({
             id="gw-reset"
             onClick={() => setOff(BASE.map(() => ({ x: 0, y: 0 })))}
           >
-            Reset layout
+            Reset
           </button>
         </div>
         <div className="g-hint">
-          Drag the nodes — snap 16px — the request path keeps flowing. Killed
-          chunks fall out with reason codes.
+          Drag the nodes — killed chunks fall out with reason codes
         </div>
       </div>
     </div>

@@ -16,7 +16,7 @@ const HOOK_STAGES = [
   "rewrite ✓ committed",
 ];
 
-function HookLive() {
+function useHookTicker(): { line: string; mode: string } {
   const [stage, setStage] = useState(-1);
   useEffect(() => {
     let i = 0;
@@ -43,16 +43,16 @@ function HookLive() {
       clearTimeout(t);
     };
   }, []);
-  return (
-    <div className="big" style={{ fontSize: 15, lineHeight: 1.7 }} id="hook-live">
-      <b>PreRequestHook</b>{" "}
-      {stage < 0
-        ? "idle"
-        : stage >= HOOK_STAGES.length
-          ? "committed — every fallback inherits the rewrite"
-          : HOOK_STAGES.slice(Math.max(0, stage - 2), stage + 1).join(" → ")}
-    </div>
-  );
+  if (stage < 0) return { line: "idle", mode: "▸ idle" };
+  if (stage >= HOOK_STAGES.length)
+    return {
+      line: "committed — every fallback inherits the rewrite",
+      mode: "▸ x-cc-decision-id attached",
+    };
+  return {
+    line: HOOK_STAGES.slice(Math.max(0, stage - 2), stage + 1).join(" → "),
+    mode: `▸ ${HOOK_STAGES[stage]}`,
+  };
 }
 
 export function TracesTable({
@@ -74,19 +74,23 @@ export function TracesTable({
           {rows.length} of {all} rows
         </span>
         <div className="right">
+          <span id="hook-live2" className="mono" style={{ fontSize: 10, color: "var(--t4)" }}>
+            ▸ PreRequestHook
+          </span>
           <span className="chip" id="mode-banner">
-            <span className="dot"></span>mode: {mode}
+            <span className="dot"></span>
+            {mode}
           </span>
         </div>
       </div>
       <div className="thead">
         <span>Time</span>
         <span>Request</span>
-        <span className="lhide">Policy</span>
-        <span>Chunks</span>
-        <span>Tokens</span>
-        <span className="lhide lhide2">Cr</span>
-        <span className="lhide lhide2">p95</span>
+        <span style={{ textAlign: "right" }}>Chunks</span>
+        <span style={{ textAlign: "right" }}>Tokens</span>
+        <span className="thide" style={{ textAlign: "right" }}>
+          ms
+        </span>
         <span style={{ textAlign: "right" }}>Status</span>
       </div>
       <div className="tbody" id="ledger-body" role="list" tabIndex={0}>
@@ -95,7 +99,7 @@ export function TracesTable({
             No admissions recorded yet.
           </p>
         )}
-        {rows.map((d) => {
+        {rows.map((d, ri) => {
           const killed = d.cin - d.cout;
           const delta = d.tin ? Math.round((1 - d.tout / d.tin) * 100) : 0;
           let st: ReactNode;
@@ -133,6 +137,7 @@ export function TracesTable({
               role="listitem"
               tabIndex={0}
               data-id={d.id}
+              style={{ ["--ri" as string]: Math.min(ri, 12) } as React.CSSProperties}
               onClick={() => onOpen(d.id)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") onOpen(d.id);
@@ -140,31 +145,26 @@ export function TracesTable({
             >
               <span className="tm">{d.t}</span>
               <span className="rq">
-                <b className="mono">{d.id}</b>
-                <em>{d.app}</em>
+                <b>{d.id}</b>
+                <em>
+                  {d.app} · {d.policy}
+                </em>
               </span>
-              <span className="lhide">{d.policy}</span>
-              <span>
+              <span className="num">
                 {d.cin}
                 <span className="arr">→</span>
                 <span className="kept">{d.cout}</span>
               </span>
-              <span>
+              <span className="num">
                 {d.tin}
                 <span className="arr">→</span>
                 {d.tout}
-                <b
-                  className={`dlt${delta <= 0 ? " zero" : ""}`}
-                  style={{ marginLeft: 4 }}
-                >
+                <b className={`dlt${delta <= 0 ? " zero" : ""}`}>
                   {delta > 0 ? `−${delta}%` : "±0%"}
                 </b>
               </span>
-              <span className="lhide lhide2">{d.cred || "·"}</span>
-              <span className="lhide lhide2">{d.ms} ms</span>
-              <span className="st" style={{ justifyContent: "flex-end" }}>
-                {st}
-              </span>
+              <span className="num thide">{d.ms}</span>
+              <span className="st">{st}</span>
             </div>
           );
         })}
@@ -175,6 +175,7 @@ export function TracesTable({
 
 export function TracesTelemetry({ rows }: { rows: DecisionListItem[] }) {
   const s = ledgerStats(rows);
+  const hook = useHookTicker();
   const top = useMemo(() => {
     const counts = new Map<string, number>();
     for (const r of rows)
@@ -195,7 +196,7 @@ export function TracesTelemetry({ rows }: { rows: DecisionListItem[] }) {
     <div className="tel-row">
       <div className="tel">
         <h5>
-          Chunks <b>this session</b>
+          Chunks <b>session</b>
         </h5>
         <div className="big">
           <span className="g" id="t-adm" data-testid="tel-admitted">
@@ -210,7 +211,7 @@ export function TracesTelemetry({ rows }: { rows: DecisionListItem[] }) {
           style={{
             font: "400 10px var(--mono)",
             color: "var(--t4)",
-            marginTop: 5,
+            marginTop: 6,
           }}
         >
           admitted / killed
@@ -232,8 +233,8 @@ export function TracesTelemetry({ rows }: { rows: DecisionListItem[] }) {
             </span>
           )}
           {top.map((t) => (
-            <div className="rbar" key={t.reason}>
-              <span>{t.reason}</span>
+            <div className="rrow-b" key={t.reason}>
+              <span>{t.reason.length > 16 ? t.reason.slice(0, 15) + "…" : t.reason}</span>
               <div className="tr">
                 <i style={{ transform: `scaleX(${t.n / max})` }}></i>
               </div>
@@ -244,9 +245,18 @@ export function TracesTelemetry({ rows }: { rows: DecisionListItem[] }) {
       </div>
       <div className="tel">
         <h5>Now processing</h5>
-        <HookLive />
         <div
-          style={{ font: "400 10px var(--mono)", color: "var(--t4)", marginTop: 5 }}
+          style={{
+            font: "500 12px/1.7 var(--mono)",
+            color: "var(--t3)",
+            minHeight: 38,
+          }}
+          id="hook-live"
+        >
+          <b>PreRequestHook</b> {hook.line}
+        </div>
+        <div
+          style={{ font: "400 10px var(--mono)", color: "var(--t4)" }}
         >
           credits spent ·{" "}
           <span style={{ color: "var(--amber)" }} id="t-cred" data-testid="tel-credits">
