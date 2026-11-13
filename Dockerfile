@@ -93,7 +93,8 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
 # normalized into /out-web (Next standalone server) plus /out-web-legacy
 # (static dist, when the web/ build still emits one): the runtime serves the
 # Next console from /app/web and keeps /srv/web as the sidecar's legacy
-# static fallback. web/temp1.html stays in the repo unreferenced.
+# static dir. web/temp1.html and web/template.html are local-only visual
+# references (gitignored): they are never copied into the image.
 # ---------------------------------------------------------------------------
 FROM node:22-bookworm AS uibuild
 
@@ -101,7 +102,7 @@ WORKDIR /web
 COPY web/package*.json ./
 RUN npm ci --no-audit --no-fund
 COPY web/ ./
-RUN (npm run build || (mkdir -p dist && cp temp1.html dist/index.html)) \
+RUN (npm run build || (mkdir -p dist && printf '%s\n' '<!doctype html><title>Context Curator</title><p>Console build unavailable.</p>' > dist/index.html)) \
     && mkdir -p /out-web /out-web-legacy \
     && if [ -f .next/standalone/server.js ]; then \
          cp -a .next/standalone/. /out-web/ \
@@ -139,7 +140,6 @@ COPY --from=builder /out/contextcurator.so /plugins/contextcurator.so
 COPY config/               /app/config/
 COPY --from=uibuild /out-web/         /app/web/
 COPY --from=uibuild /out-web-legacy/  /srv/web/
-COPY web/temp1.html        /srv/web/temp1.html
 COPY docker-entrypoint.sh  /usr/local/bin/docker-entrypoint.sh
 
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh \

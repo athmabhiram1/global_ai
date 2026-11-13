@@ -5,7 +5,8 @@
 # Open it:
 #   Console (Next, primary):       http://localhost:3000
 #   Gateway (OpenAI-compatible): http://localhost:8080/v1
-#   Sidecar console + API:       http://localhost:8090  (legacy fallback UI at /temp1.html)
+#   Sidecar console + API:       http://localhost:8090  (sidecar API; the legacy
+#   static dir /srv/web ships empty — the console is the Next app on :3000)
 # Stop it:
 #   docker compose down
 #

@@ -89,6 +89,33 @@ describe("AutopsyResultView", () => {
       "1/2 changed",
     );
   });
+
+  it("names removed sentences in the align log for pure-removal autopsy", () => {
+    render(
+      <AutopsyResultView
+        result={{
+          ...autopsyFixture,
+          influence: 0,
+          diff: {
+            changed: [],
+            added: [],
+            removed: ["Metered billing shipped."],
+            total: 3,
+          },
+          changed_indices: [1],
+          attribution: "docs.example.com mattered: removed 1 of 3 sentences",
+        }}
+        chunkId="c1"
+      />,
+    );
+    expect(document.querySelector("#aut-log")?.textContent).toContain(
+      "1 removed",
+    );
+    expect(screen.getAllByTestId("changed-sentence").length).toBeGreaterThan(0);
+    expect(document.querySelector("#aut-attrib")?.textContent).not.toContain(
+      "did not change",
+    );
+  });
 });
 
 describe("Sources actions", () => {

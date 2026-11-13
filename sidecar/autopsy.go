@@ -75,14 +75,7 @@ func (s *Server) Autopsy(ctx context.Context, req AutopsyRequest) (*AutopsyResul
 			res.WithoutSentences = withoutSent
 			res.ChangedIndices = changedIndices(res.With, res.Without)
 			domain, tokens := ablatedChunk(decision, req.ChunkID)
-			display := domain
-			if display == "" {
-				display = "chunk " + req.ChunkID
-			}
-			res.Attribution = fmt.Sprintf("%s did not change the answer", display)
-			if len(res.Diff.Changed) > 0 {
-				res.Attribution = fmt.Sprintf("%s mattered: %d/%d changed", display, len(res.Diff.Changed), res.Diff.Total)
-			}
+			res.Attribution = describeAblation(domain, req.ChunkID, res.Diff)
 			res.ChunkDomain = domain
 			res.ChunkTokens = tokens
 		}
@@ -109,14 +102,6 @@ func (s *Server) Autopsy(ctx context.Context, req AutopsyRequest) (*AutopsyResul
 		withoutSent = []string{}
 	}
 	domain, tokens := ablatedChunk(decision, req.ChunkID)
-	display := domain
-	if display == "" {
-		display = "chunk " + req.ChunkID
-	}
-	attribution := fmt.Sprintf("%s did not change the answer", display)
-	if len(diff.Changed) > 0 {
-		attribution = fmt.Sprintf("%s mattered: %d/%d changed", display, len(diff.Changed), diff.Total)
-	}
 	res := &AutopsyResult{
 		Influence:        Influence(diff),
 		Diff:             diff,
@@ -125,7 +110,7 @@ func (s *Server) Autopsy(ctx context.Context, req AutopsyRequest) (*AutopsyResul
 		WithSentences:    withSent,
 		WithoutSentences: withoutSent,
 		ChangedIndices:   changedIndices(with, without),
-		Attribution:      attribution,
+		Attribution:      describeAblation(domain, req.ChunkID, diff),
 		ChunkDomain:      domain,
 		ChunkTokens:      tokens,
 	}
@@ -188,10 +173,35 @@ func ablatedChunk(d model.Decision, chunkID string) (string, int) {
 	return "", 0
 }
 
-// changedIndices marks the with-side sentence slots that pair into a Changed
-// entry: it replays the SentenceDiff anchor walk and collects the with-side
-// indices of each paired gap. Empty comparisons yield an empty slice, never
-// nil, so the JSON stays an array.
+// describeAblation words the result honestly: substitutions keep the
+// "mattered: X/Y changed" form, while a pure removal or addition names what
+// vanished or appeared instead of claiming nothing changed. A silent ablation
+// keeps the "did not change the answer" form.
+func describeAblation(domain, chunkID string, d Diff) string {
+	display := domain
+	if display == "" {
+		display = "chunk " + chunkID
+	}
+	if len(d.Changed) > 0 {
+		return fmt.Sprintf("%s mattered: %d/%d changed", display, len(d.Changed), d.Total)
+	}
+	if len(d.Removed) > 0 || len(d.Added) > 0 {
+		parts := []string{}
+		if len(d.Removed) > 0 {
+			parts = append(parts, fmt.Sprintf("removed %d", len(d.Removed)))
+		}
+		if len(d.Added) > 0 {
+			parts = append(parts, fmt.Sprintf("added %d", len(d.Added)))
+		}
+		return fmt.Sprintf("%s mattered: %s of %d sentences", display, strings.Join(parts, ", "), d.Total)
+	}
+	return fmt.Sprintf("%s did not change the answer", display)
+}
+
+// changedIndices marks the with-side sentence slots that did not survive
+// ablation: paired-gap slots (as before) plus removed with-side sentences,
+// which the anchor walk would otherwise leave unmarked. Empty comparisons
+// yield an empty slice, never nil, so the JSON stays an array.
 func changedIndices(a, b string) []int {
 	rawA, normA := splitDiffSentences(a)
 	rawB, normB := splitDiffSentences(b)
@@ -201,6 +211,9 @@ func changedIndices(a, b string) []int {
 	for _, anchor := range anchors {
 		paired := min(len(rawA[prevA:anchor[0]]), len(rawB[prevB:anchor[1]]))
 		for k := range paired {
+			out = append(out, prevA+k)
+		}
+		for k := paired; k < len(rawA[prevA:anchor[0]]); k++ {
 			out = append(out, prevA+k)
 		}
 		prevA, prevB = anchor[0]+1, anchor[1]+1

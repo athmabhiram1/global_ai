@@ -92,7 +92,7 @@ curl http://localhost:8080/v1/chat/completions \
 ```
 
 Then open <http://localhost:3000> to see what was kept, what was dropped, and why.
-(The sidecar on `:8090` keeps serving the legacy static fallback at `/temp1.html`.)
+(The `:8090` origin serves the sidecar API; the product console is the Next app on `:3000`.)
 
 > **Data note:** decisions persist prompt and tool text in the shared SQLite
 > database under `/data` (the `cc-data` volume). Treat the volume as

@@ -45,6 +45,8 @@ export function AutopsyResultView({
   ]);
   const changedIdx = new Set(result.changed_indices ?? []);
   const changedTotal = result.changed_indices?.length ?? result.diff.changed.length;
+  const removedTotal = result.diff.removed?.length ?? 0;
+  const addedTotal = result.diff.added?.length ?? 0;
   const total = result.diff.total || withS.length;
   const isHot = (s: string, i: number) =>
     hot.has(s) || changedIdx.has(i);
@@ -77,7 +79,7 @@ export function AutopsyResultView({
   const logLines = [
     `▸ ablate ${chunkId} from ${requestId ?? "request"}`,
     `▸ with ${withS.length} sentences · without ${withoutS.length} sentences`,
-    `▸ align · ${total} sentences · ${changedTotal} changed`,
+    `▸ align · ${total} sentences · ${changedTotal} changed${removedTotal ? ` · ${removedTotal} removed` : ""}${addedTotal ? ` · ${addedTotal} added` : ""}`,
     `▸ influence = ${result.influence.toFixed(2)}${result.cached ? " · cached 60 min" : ""}`,
   ];
 
