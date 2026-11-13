@@ -480,8 +480,8 @@ describe("Template parity: autopsy proof honesty", () => {
     await waitFor(() =>
       expect(screen.queryByTestId("ablate-c3")).toBeTruthy(),
     );
+    // template flow: selecting the chunk replays at once, no Run button
     fireEvent.click(screen.getByTestId("ablate-c3"));
-    fireEvent.click(screen.getByTestId("autopsy-run"));
     await waitFor(() =>
       expect(screen.getByRole("alert").textContent).toContain("not retained"),
     );
@@ -489,6 +489,64 @@ describe("Template parity: autopsy proof honesty", () => {
       "Replay is unavailable",
     );
     expect(document.querySelectorAll("#aut-influence").length).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("AutopsySection template picker", () => {
+  const rows = [
+    {
+      ...decisionListItemFixture,
+      id: "rq-1",
+      _raw: decisionRowFixture,
+      _live: true as const,
+    },
+  ];
+
+  it("renders decision chips instead of a native dropdown", async () => {
+    vi.stubGlobal(
+      "fetch",
+      stubFetch(
+        () =>
+          new Response(JSON.stringify([decisionRowFixture]), { status: 200 }),
+      ).fetchFn,
+    );
+    render(<AutopsySection rows={rows} />);
+    await waitFor(() =>
+      expect(screen.queryByTestId("target-rq-1")).toBeTruthy(),
+    );
+    expect(
+      document.querySelector('#aut-chips [aria-label="Decision"] select'),
+    ).toBeNull();
+    expect(
+      document.querySelector('[aria-label="Decision"] select'),
+    ).toBeNull();
+    const chip = screen.getByTestId("target-rq-1");
+    expect(chip.getAttribute("title")).toBe("rq-1");
+  });
+
+  it("auto-runs the newest decision's first kept chunk with no Run button", async () => {
+    const { fetchFn, calls } = stubFetch((url) =>
+      url.endsWith("/api/cc/api/context-curator/autopsy")
+        ? new Response(
+            JSON.stringify({
+              ...autopsyFixture,
+              attribution: "docs.example.com mattered: removed 1 of 2",
+            }),
+            { status: 200 },
+          )
+        : new Response(JSON.stringify([decisionRowFixture]), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchFn);
+    render(<AutopsySection rows={rows} />);
+    await waitFor(() =>
+      expect(
+        document.querySelector("#aut-attrib")?.textContent,
+      ).toContain("removed 1 of 2"),
+    );
+    expect(
+      calls.some((c) => c.url.endsWith("/api/context-curator/autopsy")),
+    ).toBe(true);
+    expect(screen.queryByTestId("autopsy-run")).toBeNull();
   });
 });
 

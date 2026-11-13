@@ -70,7 +70,8 @@ kbd{font:500 10px var(--mono);color:var(--t3);border:1px solid var(--line2);bord
 #pg-landing{min-height:100vh}
 .lnav{position:sticky;top:0;z-index:80;background:rgba(6,7,8,.72);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
 .lnav .in{display:flex;align-items:center;gap:20px;height:60px}
-.logo{display:flex;align-items:center;gap:9px}
+.logo{display:flex;align-items:center;gap:9px;color:var(--t1);text-decoration:none}
+.logo:visited,.logo:hover,.logo:active{color:var(--t1);text-decoration:none}
 .logo svg{width:22px;height:24px;flex:none}
 .logo b{font:600 14px var(--sans);letter-spacing:-.02em}
 .logo small{font:500 10px var(--mono);color:var(--t4);margin-left:2px}

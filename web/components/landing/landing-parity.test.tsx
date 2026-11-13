@@ -43,6 +43,20 @@ describe("landing font parity (self-hosted Geist)", () => {
   });
 });
 
+describe("landing logo link parity (no UA visited purple)", () => {
+  it("styles .logo in all link states so it never shows default link colors", () => {
+    const css = fs.readFileSync(
+      path.resolve(__dirname, "../../src/console.css"),
+      "utf8",
+    );
+    // base rule carries the brand color, not the browser default
+    expect(css).toMatch(/\.logo\s*\{[^}]*color:\s*var\(--t1\)/);
+    expect(css).toMatch(/\.logo\s*\{[^}]*text-decoration:\s*none/);
+    // visited/hover/active must not fall back to purple+underline
+    expect(css).toMatch(/\.logo:visited/);
+  });
+});
+
 describe("landing shell parity", () => {
   it("renders the toasts container", () => {
     const { container } = render(<Landing />);
