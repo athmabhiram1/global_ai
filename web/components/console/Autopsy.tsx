@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import type { AutopsyResult } from "../../lib/api";
 
-function sentences(text: string): string[] {
+function sentences(text: unknown): string[] {
+  if (typeof text !== "string") return [];
   return text
     .split(/(?<=[.!?])\s+/)
     .map((s) => s.trim())

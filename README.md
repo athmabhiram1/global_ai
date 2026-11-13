@@ -1,252 +1,147 @@
 # Context Curator
 
-**A Bifrost plugin that decides which sources are allowed to speak to your model.**
+**A native Bifrost gateway plugin (Go `.so`) that decides which sources are allowed to speak to your model.**
 
-> Compression asks how few tokens. We ask which sources are allowed to speak.
+> This is an entry for the **BIFEST challenge: open-source Bifrost gateway extension (Go `.so` plugin)** — it fits that track exactly. Tavily-powered refresh inside counts toward **both** technologies, so the submitter should tick the **Tavily-integration checkbox** at submission time.
 
 ---
 
-## The problem
+## Problem
 
-Your agent searched the web, called four tools, and pasted all of it into the prompt.
-Some of it is a current primary source. Some of it is a stale blog post. Some of it is a
-domain you would never trust. The gateway forwarded all of it without an opinion, and when
-the answer is wrong nobody can say which chunk caused it.
+Every agent in the company walks through one door to reach a model: the Bifrost gateway. One evening a customer gets quoted a wrong, stale price — $39 instead of $49. The post-mortem asks one question: **who told the bot that?**
 
-Every existing tool solves one slice:
+The gateway forwarded everything without checking IDs: a current pricing page, a stale blog post, a poisoned content-farm deal. No reranker, compressor, or RAG filter enforces one source policy for every app behind the door — and when the answer is wrong, nothing can say which chunk caused it.
 
-| Tool | What it does | What it does not do |
+## Solution
+
+Context Curator is the bouncer **standing IN that door**: a native `.so` plugin running in the gateway's own request path (`PreRequestHook`), scoring every retrieved chunk (authority, freshness, independence, learned Beta reputation), killing losers with reason codes, and writing one receipt per decision into SQLite — provable by replay (Autopsy). **One door, one policy, one receipt per request — for every app at once.** There are no per-app policies; the gateway enforces a single fleet-wide rule.
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Gateway plugin | Go, `-buildmode=plugin` (`.so`, `PreRequestHook` / `PostLLMHook`), Bifrost |
+| Gateway | Bifrost `:8080`, OpenAI-compatible (`/v1/chat/completions`) |
+| Console | Next.js 16 (`web/`, `next@16.4.5`) on `:3000`, proxies same-origin `/api/cc/*` to the sidecar |
+| Sidecar | Go (`sidecar/`) on `:8090` — read-only console API, autopsy replay, reputation |
+| Freshness evidence | Tavily refresh via Bifrost relay (`/relay/tavily/search`) → direct HTTP fallback, per-request credit budget |
+| Demo provider | Deterministic echo mock (`mock/mock-model`) — repeats admitted context only |
+| Storage | One SQLite file (`/data/contextcurator.db`, `cc-data` volume) |
+
+## Architecture
+
+```
+apps (support-bot, docs-assistant, research-agent)
+  │
+  ▼
+Bifrost :8080 ── plugin PreRequestHook ──► mock / primary provider
+  │   segment → provenance → score → refresh → select → rewrite
+  │   decisions
+  ▼
+cc-sidecar :8090 (read-only console API + autopsy replay)
+  │
+SQLite — one file (/data/contextcurator.db)
+```
+
+The plugin runs **once per request, in-process**, before the provider call; mutations commit and survive fallbacks. The sidecar exists because a `.so` plugin cannot register HTTP routes — it serves the console API and autopsy, sharing the one SQLite file. Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Measured results
+
+50 trap questions × 3 repeats, raw (plugin `annotate`, pass-through) vs curated (`rewrite`), deterministic echo mock. Accuracy is 1 per question iff the echoed answer contains every `must_contain` token and none of the `must_not_contain` tokens. Full table: [examples/eval/results.md](examples/eval/results.md).
+
+| | raw | curated |
 |---|---|---|
-| Prompt compressors | Shrink text | Decide whether the text deserved to be there |
-| Rerankers | Reorder chunks | Drop anything, or explain a drop |
-| RAG frameworks | Filter at retrieval time | Apply one policy across every app behind a gateway |
-| Guardrails | Block unsafe content | Judge source authority or freshness |
+| mean accuracy | 0.480 | **1.000** (+52pp on this trap set) |
+| mean provider tokens | 416 | **366 (−12.0%)** |
+| mean latency | 8 ms | 8 ms (unchanged — no latency cost, not a win) |
 
-Context Curator sits **in the request path of the gateway** and enforces one source policy
-across every application, deterministically, with a reason code for every decision.
+Echo-mock caveat: the provider only repeats admitted context — token/latency deltas measure curation alone; no model judgement is involved, and accuracy is a trap-set score, not a general benchmark.
 
-## What it does
+Traps covered: stale prices (`$39` refused, `$49` kept), denied domains, near-duplicate press releases (collapsed to one chunk), version/law controls.
 
-For each request, before the provider is called:
+## Screenshots
 
-1. **Segments** candidate context out of tool results and explicit `<context>` blocks.
-   User-authored prose is never touched.
-2. **Attributes** each chunk to a source: URL, domain, fetch time, content hash.
-3. **Scores** it on relevance, authority, freshness, independence, and learned utility.
-4. **Enforces** policy: denied domains, maximum age per freshness class, minimum independent
-   sources, and a context token budget.
-5. **Refreshes** stale chunks through Tavily, within a per-request credit budget.
-6. **Rewrites** the request, keeping the chunks that earned their place.
-7. **Records** every keep and drop, with a reason.
+Live console (`http://localhost:3000`), six beats of the demo:
 
-Then, on demand, it can **prove** a decision: replay the same request with one chunk removed
-and diff the answer at sentence level. If the answer changes, that chunk mattered.
+![01 — Landing: hero and request-path graph](docs/demo/shots/01-landing.png)
 
-## Why this is not another wrapper
+![02 — Traces: the decision ledger, one receipt per request](docs/demo/shots/02-traces.png)
 
-The admission path contains **no LLM**. Weights are fixed, published, and tested with golden
-values. The same request, policy, and reputation table always produce the same decision.
+![03 — Drawer: the decision file — per-chunk domain, scores, verdict](docs/demo/shots/03-drawer.png)
 
-The LLM is used in exactly one place: off the request path, when a human asks the system to
-explain or re-verify something. *Deterministic where trust is decided, AI where language is
-understood.*
+![04 — Sources: reputation table, deny a domain fleet-wide](docs/demo/shots/04-sources.png)
+
+![05 — Policy: effective mode, deny list, freshness classes, kill list](docs/demo/shots/05-policy.png)
+
+![06 — Evals: the measured strip, sourced from results.md](docs/demo/shots/06-evals.png)
 
 ## Quickstart
+
+One container, one command:
 
 ```bash
 docker compose up -d --build
 ```
 
-One Compose stack (`global-hackathon`), one container, one start button —
-Bifrost on `localhost:8080`, primary console (Next) on `localhost:3000`,
-sidecar API + legacy fallback UI on `localhost:8090`. Or the raw
-equivalent:
-
-```bash
-docker run --rm -p 3000:3000 -p 8080:8080 -p 8090:8090 \
-  -e OPENAI_API_KEY=sk-... \
-  -e TAVILY_API_KEY=tvly-... \
-  context-curator:dev
-```
-
-| Port | What |
-|---|---|
-| `3000` | Context Curator console (Next, primary) |
-| `8080` | Bifrost gateway (OpenAI-compatible) with the plugin loaded |
-| `8090` | Context Curator sidecar API + legacy fallback UI |
-
-Point any OpenAI SDK at `http://localhost:8080/v1` and nothing else changes. The gateway
-curates the context on the way through.
+Seed one decision (mock provider, deterministic echo) — copy verbatim from [docs/demo/video-script.md](docs/demo/video-script.md):
 
 ```bash
 curl http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "openai/gpt-4o-mini",
+    "model": "mock/mock-model",
+    "temperature": 0.0,
     "messages": [
-      {"role": "system", "content": "Answer using only the provided context."},
-      {"role": "user", "content": "How much is the Pro plan?"},
-      {"role": "tool", "tool_call_id": "c1", "content": "Pro is $49/seat/month. Source: https://example.com/pricing (fetched 2026-11-03)"}
+      {"role": "user", "content": "How much is Pro?"},
+      {"role": "tool", "content": "Pro is $49/seat/month. Source: https://example.com/pricing (fetched 2026-11-03)"},
+      {"role": "tool", "content": "Pro is $39/seat/month. Source: https://stale-blog.example/post (fetched 2024-02-01)"},
+      {"role": "tool", "content": "Pro dealz!!! Source: https://content-farm.example/deals (fetched 2026-11-03)"}
     ]
   }'
 ```
 
-Then open <http://localhost:3000> to see what was kept, what was dropped, and why.
-(The `:8090` origin serves the sidecar API; the product console is the Next app on `:3000`.)
+Expected: the answer echoes `$49`; `$39` drops as `stale`, content-farm drops as `authority_denied`.
 
-> **Data note:** decisions persist prompt and tool text in the shared SQLite
-> database under `/data` (the `cc-data` volume). Treat the volume as
-> sensitive: back it up, restrict access, and wipe it before sharing an image.
-
-## Build from source
-
-Requires Docker only. Go and Node are not needed on the host.
-
-```bash
-git clone https://github.com/athmabhiram/context-curator
-cd context-curator
-docker build -t context-curator:dev .
-docker run --rm -p 3000:3000 -p 8080:8080 -p 8090:8090 \
-  -e OPENAI_API_KEY=sk-... -e TAVILY_API_KEY=tvly-... \
-  context-curator:dev
-```
-
-The image builds Bifrost from a pinned upstream commit with dynamic linking enabled, compiles
-the plugin as a Go shared object against the same module graph, and ships both in one
-container with the sidecar. Same Debian release on both sides, so the plugin and the binary
-never disagree about libc.
-
-## How it is put together
-
-```
-                    ┌─────────────────────────────────────────┐
-   your app ───────►│  Bifrost :8080                          │
-                    │    └─ contextcurator.so  (PreRequestHook)│──────► OpenAI
-                    │         segment → score → select → rewrite│
-                    └───────────────┬─────────────────────────┘
-                                    │ decisions
-                                    ▼
-                    ┌─────────────────────────────────────────┐
-                    │  cc-sidecar :8090                        │
-                    │    UI · decisions · autopsy · reputation │
-                    └───────────────┬─────────────────────────┘
-                                    │
-                              SQLite (/data)
-```
-
-The plugin runs **once per request**, inside Bifrost, before routing. Mutations it makes to
-the request are committed and observed by the provider call and by every fallback attempt.
-
-The sidecar exists because a Go plugin cannot register HTTP routes. It serves the UI and the
-API, and shares one SQLite database with the plugin.
+Then open **http://localhost:3000** — Traces shows the new row; click it for the drawer, Autopsy, Sources, Policy. Ports: `:8080` gateway, `:8090` sidecar API, `:3000` console. Full operations guide: [docs/SETUP.md](docs/SETUP.md). Deploy target: [render.yaml](render.yaml). Compose file: [docker-compose.yml](docker-compose.yml).
 
 ## Configuration
 
-Policy lives next to Bifrost's config at `/data/bifrost/config.json`, in the plugin's `config`
-block. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) §8 for the full schema.
-
-```json
-{
-  "plugins": [{
-    "name": "context-curator",
-    "enabled": true,
-    "path": "/plugins/contextcurator.so",
-    "placement": "pre_builtin",
-    "order": 10,
-    "config": {
-      "enabled": true,
-      "mode": "rewrite",
-      "budget": { "max_context_tokens": 4000, "max_chunks": 8 },
-      "freshness": { "classes": { "price": 24, "version": 720, "law": 168 } },
-      "authority": { "deny": ["content-farm.example"] },
-      "independence": { "min_sources": 2 }
-    }
-  }]
-}
-```
-
-Modes:
-
-| Mode | Behaviour |
-|---|---|
-| `annotate` | Record decisions, change nothing. The safe default. |
-| `rewrite` | Drop inadmissible chunks. |
-| `block` | Reject the request when policy is violated. |
-
-## Drop reason codes
-
-Every dropped chunk carries exactly one:
-
-`stale` · `duplicate_of:<id>` · `authority_denied` · `low_relevance` · `over_budget` ·
-`policy_min_sources` · `refresh_failed` · `provenance_unknown`
-
-A decision with a drop and no reason is a bug, and the type system enforces it.
-
-## Tavily
-
-Tavily is the freshness oracle. When a chunk is older than its class allows, the curator
-refreshes it through Bifrost's relay (`/relay/tavily/search`), so the traffic is priced,
-budgeted, and logged by the gateway itself, with direct HTTP as the fallback.
-
-A Tavily outage degrades the decision to `annotate` and marks affected chunks
-`refresh_failed`. It never blocks a request.
-
-## Evaluation
-
-Fifty trap questions run twice — once through the plugin in `annotate` mode
-(pass-through) and once in `rewrite` mode — three repeats each, against a
-deterministic echo provider. Accuracy is per-question: 1 when the answer
-contains every required token and none of the banned ones.
-
-```bash
-./examples/run-stack.ps1                                   # curated :18080
-./examples/run-stack.ps1 -Mode annotate -Container cc-eval-raw `
-  -BifrostPort 18081 -SidecarPort 18091                   # raw baseline
-go run ./examples/eval > examples/eval/results.md
-```
-
-| | raw | curated |
+| Variable | Default | Purpose |
 |---|---|---|
-| mean accuracy | 0.480 | **1.000** (+52pp) |
-| mean provider tokens | 416 | **366** (−12.0%) |
-| mean latency | 8 ms | 8 ms |
+| `CC_ADMIN_TOKEN` | `dev-token` | Bearer for sidecar admin routes; injected server-side by Next proxy, never reaches the browser |
+| `CC_SIDECAR_URL` | `http://127.0.0.1:8090` | Where the Next server proxy forwards `/api/cc/*` |
+| `OPENAI_API_KEY` | `unused` | Live models; `unused` keeps the deterministic mock only |
+| `MOCK_API_KEY` | `unused` | Mock provider credential |
+| `TAVILY_API_KEY` | `unused` | Live freshness evidence; unset degrades refresh to `refresh_failed`, never blocks |
+| `BIFROST_SETUP_TOKEN` | `dev-setup-token` | One-time gateway config bootstrap (`X-Bifrost-Setup-Token`) |
+| `PORT` | `3000` | Next console port |
 
-Traps cover stale prices (`$39` refused, `$49` kept), denied domains,
-near-duplicate press releases (collapsed to one chunk), and version/law
-controls. See [`examples/eval/results.md`](examples/eval/results.md) for
-the full per-question table.
+Policy itself lives in the plugin `config` block (`config/` → `/data/bifrost/config.json`); schema in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §8. Modes: `annotate` (record, change nothing — safe default) · `rewrite` (drop inadmissible) · `block` (reject on hard deny).
 
-### Console
+## Project map
 
-The primary console is the Next.js app: in Docker it runs on
-<http://localhost:3000> and proxies same-origin `/api/cc/*` to the sidecar,
-injecting `CC_ADMIN_TOKEN` server-side (the token never reaches the browser).
-The measured strip in the console matches `examples/eval/results.md`:
-accuracy 0.480 → 1.000, tokens −12.0%, 8 ms latency.
-
-Legacy fallback: [`web/template.html`](web/template.html) opened directly in a
-browser. It is live by default: it reads `?sidecar=` (default
-`http://localhost:8090`) and talks to the sidecar's documented API, falling
-back to built-in sim data with `?mock=1`. Our dev stacks publish the sidecar
-on `127.0.0.1:18090`, so use `?sidecar=http://127.0.0.1:18090`.
-
-## Documentation
-
-| Document | Contents |
+| Path | Contents |
 |---|---|
-| [`docs/PRD.md`](docs/PRD.md) | Problem, users, requirements, metrics, demo |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Components, hooks, data model, scoring, Docker |
-| [`docs/VERIFICATION.md`](docs/VERIFICATION.md) | Prior-art audit and the corrections it forced |
-| [`docs/SETUP.md`](docs/SETUP.md) | Detailed setup and operation |
-| [`docs/superpowers/plans/`](docs/superpowers/plans/) | Wave-by-wave implementation plan |
+| `plugin/` | The `.so` — segment, provenance, score, refresh, cluster, select, rewrite, record |
+| `sidecar/` | `:8090` API — decisions, autopsy replay, reputation, claims |
+| `web/` | Next.js 16 console (`web/package.json`) on `:3000` |
+| `examples/eval/` | 50-question harness + [results.md](examples/eval/results.md) |
+| `config/` | Gateway + policy seed config |
+| `docs/demo/` | [video-script.md](docs/demo/video-script.md) (numbers + DO-NOT-SAY list), shots, storyboard |
 
-## Status
+## Honesty / disclosures
 
-Built during the Geek Room Global AI Hackathon, November 2026.
+- **Echo mock.** All demo answers and all eval numbers come from `mock/mock-model`, a deterministic echo — it repeats admitted context; it does not evaluate trust or resemble a frontier model.
+- **Semantics are frozen by spec.** Pure-removal influence is **0 by spec** (removing nothing changes nothing); attribution names removals, and Autopsy proves kept-chunk influence by replay with/without.
+- **Legacy DB rows lack chunks.** Decisions written before chunk persistence show counts without per-chunk rows; new decisions carry the full decision file.
+- What this does **not** claim: no frontier-model results, no latency win (8 ms → 8 ms), no savings beyond the measured 12.0%, no security guarantees (it enforces one gateway source policy with a reason code per drop — not a block on all injection), no per-app policies.
 
-- Bifrost track: plugin, extension points, setup docs, tests.
-- Tavily track: pre-emptive stale-source detection with per-chunk freshness scores.
+## Submission pointers
 
-## Licence
+- **Track:** Bifrost-primary (native `.so` gateway extension); also tick the **Tavily-integration checkbox** (relay → HTTP refresh is inside this repo).
+- **Requires:** public repo + PPT link + ≤ 3 min demo video. Deadline **Nov 15, 23:59 IST**.
+- **TODO (owner: submitter):** `PPT: <link>` — record the video per [docs/demo/video-script.md](docs/demo/video-script.md) and obey its DO-NOT-SAY list; `VIDEO: <link>`; make the repo public (`github.com/athmabhiram/context-curator`).
 
-Apache 2.0, matching Bifrost.
+---
+
+Compression asks how few tokens. We ask which sources are allowed to speak.

@@ -2,7 +2,7 @@
 import { describe, expect, it, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import Shell from "./console/Shell";
-import { decisionRowFixture } from "../lib/testFixtures";
+import { autopsyFixture, decisionRowFixture } from "../lib/testFixtures";
 
 vi.mock("./console/Evals", () => ({
   default: () => <p>mocked evals section</p>,
@@ -25,6 +25,9 @@ function stubApi(opts: { failDecisions?: boolean } = {}) {
     calls.push(url);
     if (url.includes("/decisions/rq-")) {
       return new Response(JSON.stringify({ ...decisionRowFixture, request_id: "rq-1" }), { status: 200 });
+    }
+    if (url.includes("/autopsy")) {
+      return new Response(JSON.stringify(autopsyFixture), { status: 200 });
     }
     if (url.includes("/decisions")) {
       if (opts.failDecisions) return new Response("down", { status: 500 });
