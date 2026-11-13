@@ -469,6 +469,9 @@ export default function Drawer({
   const [detail, setDetail] = useState<DecisionDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ablate, setAblate] = useState<string | null>(null);
+  // Entrance: #drawer rests translated 110% off-screen; the .open class
+  // slides it in. Applied on the next frame so the CSS transition runs.
+  const [entered, setEntered] = useState(false);
 
   useEffect(() => {
     setDetail(null);
@@ -490,11 +493,17 @@ export default function Drawer({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setEntered(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
   return (
     <>
-      <div id="scrim" className="open" onClick={onClose} />
+      <div id="scrim" className={entered ? "open" : ""} onClick={onClose} />
       <div
         id="drawer"
+        className={entered ? "open" : ""}
         role="dialog"
         aria-modal="true"
         aria-label={`Decision ${requestId}`}

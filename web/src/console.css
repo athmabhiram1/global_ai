@@ -262,7 +262,9 @@ h1 .hl{color:var(--accent)}
 #scrim.open{opacity:1;pointer-events:auto}
 #drawer{position:fixed;top:0;right:0;height:100vh;height:100dvh;width:min(600px,100%);background:var(--bg1);
   border-left:1px solid var(--line2);z-index:150;display:flex;flex-direction:column;will-change:transform,opacity;
-  transform:translate3d(110%,0,0);box-shadow:-24px 0 64px rgba(0,0,0,.5)}
+  transform:translate3d(110%,0,0);box-shadow:-24px 0 64px rgba(0,0,0,.5);
+  transition:transform .32s var(--ease)}
+#drawer.open{transform:translate3d(0,0,0)}
 .d-head{padding:16px 20px 14px;border-bottom:1px solid var(--line)}
 .d-top{display:flex;align-items:flex-start;gap:12px}
 .d-top h3{font:600 19px var(--mono);letter-spacing:-.02em;font-feature-settings:"zero" 1}

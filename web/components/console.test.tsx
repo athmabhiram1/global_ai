@@ -69,6 +69,26 @@ describe("ChunkCard", () => {
 });
 
 describe("DecisionDrawerView", () => {
+  it("slides the mounted drawer in with .open (drawer is visible)", async () => {
+    const { fetchFn } = stubFetch(
+      () =>
+        new Response(JSON.stringify(decisionRowFixture), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchFn);
+    const { default: Drawer } = await import("./console/Drawer");
+    const { container } = render(
+      <Drawer requestId="rq-1" onClose={() => {}} />,
+    );
+    // detail fetch resolves, then the entrance class lands on the next frame
+    await waitFor(() => {
+      expect(container.querySelector("#dr-id")?.textContent).toBe("rq-1");
+    });
+    await waitFor(() => {
+      expect(container.querySelector("#drawer.open")).toBeTruthy();
+    });
+    expect(container.querySelector("#scrim.open")).toBeTruthy();
+  });
+
   it("shows the honest empty-claims state", () => {
     render(
       <DecisionDrawerView detail={decisionDetailFixture} onAutopsy={() => {}} />,
