@@ -102,13 +102,19 @@ WORKDIR /web
 COPY web/package*.json ./
 RUN npm ci --no-audit --no-fund
 COPY web/ ./
-RUN (npm run build || (mkdir -p dist && printf '%s\n' '<!doctype html><title>Context Curator</title><p>Console build unavailable.</p>' > dist/index.html)) \
+# Fail loudly if the console bundle is missing: a previous revision masked a
+# broken Next build behind a fallback page and shipped an image whose
+# entrypoint silently skipped :3000. A red build beats a hollow container.
+RUN npm run build \
     && mkdir -p /out-web /out-web-legacy \
     && if [ -f .next/standalone/server.js ]; then \
          cp -a .next/standalone/. /out-web/ \
          && mkdir -p /out-web/.next \
          && cp -a .next/static/. /out-web/.next/static/ \
          && (cp -a public/. /out-web/public/ || true); \
+       else \
+         echo "ERROR: .next/standalone/server.js missing after 'npm run build'" >&2; \
+         exit 1; \
        fi \
     && (cp -a dist/. /out-web-legacy/ 2>/dev/null || true) \
     && ls -la /out-web /out-web-legacy
