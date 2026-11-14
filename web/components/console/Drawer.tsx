@@ -236,9 +236,11 @@ export function ChunkCard({
 export function DecisionDrawerView({
   detail,
   onAutopsy,
+  onOpenAutopsy,
 }: {
   detail: DecisionDetail;
   onAutopsy: (chunkId: string) => void;
+  onOpenAutopsy?: (requestId: string, chunkId: string) => void;
 }) {
   const kept = detail.chunks.filter((c) => c.verdict === "keep");
   const dropped = detail.chunks.filter((c) => c.verdict === "drop");
@@ -372,18 +374,24 @@ export function DecisionDrawerView({
           </button>
           <a
             className="btn sm"
-            href="#ov-autopsy"
+            href="#pv-autopsy"
             onClick={(e) => {
               e.preventDefault();
-              const firstKept = kept[0]?.id;
+              const firstKept = kept[0]?.id ?? "";
+              if (onOpenAutopsy) {
+                onOpenAutopsy(detail.id, firstKept);
+                return;
+              }
               window.dispatchEvent(
                 new CustomEvent("cc-autopsy", {
-                  detail: { requestId: detail.id, chunkId: firstKept ?? "" },
+                  detail: { requestId: detail.id, chunkId: firstKept },
                 }),
               );
-              document
-                .getElementById("ov-autopsy")
-                ?.scrollIntoView({ behavior: "smooth" });
+              requestAnimationFrame(() => {
+                document
+                  .getElementById("pv-autopsy")
+                  ?.scrollIntoView({ behavior: "smooth", block: "start" });
+              });
             }}
           >
             Open autopsy →
@@ -558,6 +566,19 @@ export default function Drawer({
                 onAutopsy={(id) =>
                   setAblate((cur) => (cur === id ? null : id))
                 }
+                onOpenAutopsy={(requestId, chunkId) => {
+                  onClose();
+                  window.dispatchEvent(
+                    new CustomEvent("cc-autopsy", {
+                      detail: { requestId, chunkId },
+                    }),
+                  );
+                  requestAnimationFrame(() => {
+                    document
+                      .getElementById("pv-autopsy")
+                      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  });
+                }}
               />
               {ablate && (
                 <AutopsyRunner requestId={requestId} chunkId={ablate} />

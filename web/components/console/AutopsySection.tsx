@@ -34,6 +34,17 @@ export default function AutopsySection({
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const ranRef = useRef("");
+  // Handoff from the decision drawer ("Open autopsy →"): the event may arrive
+  // before, with, or instead of a decision change, so the wanted chunk waits
+  // here until the detail for the requested decision loads.
+  const pendingChunkRef = useRef<string | null>(null);
+  const liveRef = useRef({ decisionId: "", chunkIds: [] as string[] });
+  useEffect(() => {
+    liveRef.current = {
+      decisionId,
+      chunkIds: chunks.map((c) => c.id),
+    };
+  });
 
   const ids = (rows || []).map((r) => r.id);
   const shownIds = ids.slice(0, MAX_DECISION_CHIPS);
@@ -69,8 +80,14 @@ export default function AutopsySection({
             reason: c.reason,
           })),
         );
+        const wanted = pendingChunkRef.current;
+        pendingChunkRef.current = null;
         const firstKept = detail.chunks.find((c) => c.verdict === "keep");
-        if (firstKept) setChunkId(firstKept.id);
+        const target =
+          (wanted && detail.chunks.some((c) => c.id === wanted)
+            ? wanted
+            : firstKept?.id) ?? "";
+        if (target) setChunkId(target);
       })
       .catch((e: unknown) =>
         setError(e instanceof Error ? e.message : String(e)),
@@ -79,6 +96,27 @@ export default function AutopsySection({
       live = false;
     };
   }, [decisionId]);
+
+  // Drawer handoff: { requestId, chunkId } selects that decision and runs the
+  // requested chunk through the normal autorun path below.
+  useEffect(() => {
+    const onAuto = (e: Event) => {
+      const d = (e as CustomEvent<{ requestId?: string; chunkId?: string }>)
+        .detail;
+      if (!d?.requestId) return;
+      const { decisionId: curId, chunkIds } = liveRef.current;
+      if (d.requestId === curId && chunkIds.includes(d.chunkId ?? "")) {
+        setResult(null);
+        setError(null);
+        setChunkId(d.chunkId as string);
+        return;
+      }
+      pendingChunkRef.current = d.chunkId ?? null;
+      setDecisionId(d.requestId);
+    };
+    window.addEventListener("cc-autopsy", onAuto);
+    return () => window.removeEventListener("cc-autopsy", onAuto);
+  }, []);
 
   async function run(reqId: string, ckId: string) {
     setRunning(true);

@@ -29,7 +29,7 @@ export const TOUR_STEPS: TourStep[] = [
     title: "The scoreboard",
     text: "Every number is computed from the admission ledger — the same rows the sidecar wrote.",
     selectors: ["#kpis"],
-    section: "ov-overview",
+    section: "pv-overview",
     dur: 5000,
   },
   {
@@ -37,7 +37,7 @@ export const TOUR_STEPS: TourStep[] = [
     title: "One row = one request",
     text: "Each decision shows chunks in versus admitted, with a reason code on every kill. Next: we open it.",
     selectors: ["#ledger-body .trow[data-id]", "#ledger-body .trow"],
-    section: "ov-traces",
+    section: "pv-traces",
     dur: 5400,
   },
   {
@@ -45,7 +45,7 @@ export const TOUR_STEPS: TourStep[] = [
     title: "The decision file",
     text: "Flame graph of the PreRequestHook pipeline; below, every chunk with its score and verdict.",
     selectors: ["#dr-body .flame", "#drawer .flame", "#drawer"],
-    section: "ov-traces",
+    section: "pv-traces",
     dur: 6000,
   },
   {
@@ -57,7 +57,7 @@ export const TOUR_STEPS: TourStep[] = [
       "#drawer .ck-act",
       "#drawer",
     ],
-    section: "ov-traces",
+    section: "pv-traces",
     dur: 5400,
   },
   {
@@ -65,7 +65,7 @@ export const TOUR_STEPS: TourStep[] = [
     title: "Influence, measured",
     text: "The replay aligns both answers sentence by sentence and files an influence score — proof the chunk mattered.",
     selectors: ["#aut-influence"],
-    section: "ov-autopsy",
+    section: "pv-autopsy",
     dur: 7000,
   },
   {
@@ -73,7 +73,7 @@ export const TOUR_STEPS: TourStep[] = [
     title: "One click → fleet-wide",
     text: "Flagging a domain feeds the one reputation table every app shares.",
     selectors: ['[data-testid="mark-unreliable"]', "#aut-actions"],
-    section: "ov-autopsy",
+    section: "pv-autopsy",
     dur: 5400,
   },
   {
@@ -81,7 +81,7 @@ export const TOUR_STEPS: TourStep[] = [
     title: "One table, every app",
     text: "Utility per domain as a Beta posterior, decayed daily — a burn in one app shields the rest.",
     selectors: ["#rep-body .rrow", "#rep-body"],
-    section: "ov-sources",
+    section: "pv-sources",
     dur: 5800,
   },
   {
@@ -89,7 +89,7 @@ export const TOUR_STEPS: TourStep[] = [
     title: "Enforced, not advisory",
     text: "The kill list is resolved policy — denied domains hard-block before any model call.",
     selectors: ["#deny-chips"],
-    section: "ov-policy",
+    section: "pv-policy",
     dur: 5800,
   },
   {

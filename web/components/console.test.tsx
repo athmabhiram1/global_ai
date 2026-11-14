@@ -570,6 +570,107 @@ describe("AutopsySection template picker", () => {
   });
 });
 
+describe("Drawer open-autopsy handoff (dead #ov-autopsy link)", () => {
+  it("closes the drawer, emits cc-autopsy with the first kept chunk, and scrolls to pv-autopsy", async () => {
+    const { fetchFn } = stubFetch(
+      () =>
+        new Response(JSON.stringify(decisionRowFixture), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchFn);
+    const seen: Array<{ requestId?: string; chunkId?: string }> = [];
+    const onAuto = (e: Event) =>
+      seen.push(
+        (e as CustomEvent<{ requestId?: string; chunkId?: string }>).detail,
+      );
+    window.addEventListener("cc-autopsy", onAuto);
+    const scrolled: string[] = [];
+    const pv = document.createElement("section");
+    pv.id = "pv-autopsy";
+    pv.scrollIntoView = vi.fn((() => {
+      scrolled.push("pv-autopsy");
+    }) as unknown as typeof pv.scrollIntoView);
+    document.body.appendChild(pv);
+    const onClose = vi.fn();
+    const { default: Drawer } = await import("./console/Drawer");
+    const { getByText } = render(
+      <Drawer requestId="rq-1" onClose={onClose} />,
+    );
+    await waitFor(() =>
+      expect(screen.queryByTestId("autopsy-c1")).toBeTruthy(),
+    );
+    fireEvent.click(getByText("Open autopsy →"));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual([{ requestId: "rq-1", chunkId: "c1" }]);
+    await waitFor(() => expect(scrolled).toEqual(["pv-autopsy"]));
+    window.removeEventListener("cc-autopsy", onAuto);
+    pv.remove();
+  });
+});
+
+describe("AutopsySection answers cc-autopsy (drawer handoff)", () => {
+  const rows = [
+    {
+      ...decisionListItemFixture,
+      id: "rq-1",
+      _raw: decisionRowFixture,
+      _live: true as const,
+    },
+  ];
+
+  it("runs the requested chunk when the drawer hands it off", async () => {
+    const { fetchFn, calls } = stubFetch((url, init) => {
+      if (url.endsWith("/api/cc/api/context-curator/autopsy")) {
+        let chunk = "";
+        try {
+          chunk = JSON.parse(String(init?.body)).chunk_id;
+        } catch {
+          chunk = "";
+        }
+        return new Response(
+          JSON.stringify({
+            ...autopsyFixture,
+            attribution:
+              chunk === "c2" ? "handoff check" : autopsyFixture.attribution,
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify([decisionRowFixture]), {
+        status: 200,
+      });
+    });
+    vi.stubGlobal("fetch", fetchFn);
+    render(<AutopsySection rows={rows} />);
+    await waitFor(() =>
+      expect(screen.queryByTestId("ablate-c1")).toBeTruthy(),
+    );
+    // c1 auto-ran with the fixture attribution; only the drawer handoff
+    // may trigger the c2 run below
+    await waitFor(() =>
+      expect(document.querySelector("#aut-attrib")?.textContent).toContain(
+        "docs.example.com mattered",
+      ),
+    );
+    const before = calls.filter((c) =>
+      c.url.endsWith("/api/context-curator/autopsy"),
+    ).length;
+    window.dispatchEvent(
+      new CustomEvent("cc-autopsy", {
+        detail: { requestId: "rq-1", chunkId: "c2" },
+      }),
+    );
+    await waitFor(() =>
+      expect(document.querySelector("#aut-attrib")?.textContent).toContain(
+        "handoff check",
+      ),
+    );
+    const after = calls.filter((c) =>
+      c.url.endsWith("/api/context-curator/autopsy"),
+    ).length;
+    expect(after).toBeGreaterThan(before);
+  });
+});
+
 describe("Template parity: policy hookstrip", () => {
   it("matches the template hook order with PreRequest current", () => {
     render(
