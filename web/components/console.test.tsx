@@ -571,7 +571,7 @@ describe("AutopsySection template picker", () => {
 });
 
 describe("Drawer open-autopsy handoff (dead #ov-autopsy link)", () => {
-  it("closes the drawer, emits cc-autopsy with the first kept chunk, and scrolls to pv-autopsy", async () => {
+  it("closes the drawer, emits cc-autopsy with the first kept chunk, and asks Shell to show autopsy", async () => {
     const { fetchFn } = stubFetch(
       () =>
         new Response(JSON.stringify(decisionRowFixture), { status: 200 }),
@@ -583,13 +583,10 @@ describe("Drawer open-autopsy handoff (dead #ov-autopsy link)", () => {
         (e as CustomEvent<{ requestId?: string; chunkId?: string }>).detail,
       );
     window.addEventListener("cc-autopsy", onAuto);
-    const scrolled: string[] = [];
-    const pv = document.createElement("section");
-    pv.id = "pv-autopsy";
-    pv.scrollIntoView = vi.fn((() => {
-      scrolled.push("pv-autopsy");
-    }) as unknown as typeof pv.scrollIntoView);
-    document.body.appendChild(pv);
+    const seenGo: string[] = [];
+    const onGo = (e: Event) =>
+      seenGo.push((e as CustomEvent<string>).detail);
+    window.addEventListener("cc-go", onGo);
     const onClose = vi.fn();
     const { default: Drawer } = await import("./console/Drawer");
     const { getByText } = render(
@@ -601,9 +598,9 @@ describe("Drawer open-autopsy handoff (dead #ov-autopsy link)", () => {
     fireEvent.click(getByText("Open autopsy →"));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(seen).toEqual([{ requestId: "rq-1", chunkId: "c1" }]);
-    await waitFor(() => expect(scrolled).toEqual(["pv-autopsy"]));
+    expect(seenGo).toEqual(["autopsy"]);
     window.removeEventListener("cc-autopsy", onAuto);
-    pv.remove();
+    window.removeEventListener("cc-go", onGo);
   });
 });
 
@@ -668,6 +665,38 @@ describe("AutopsySection answers cc-autopsy (drawer handoff)", () => {
       c.url.endsWith("/api/context-curator/autopsy"),
     ).length;
     expect(after).toBeGreaterThan(before);
+  });
+
+  it("keeps the visible result when handed the chunk it already shows", async () => {
+    const { fetchFn, calls } = stubFetch((url, init) => {
+      if (url.endsWith("/api/cc/api/context-curator/autopsy")) {
+        return new Response(JSON.stringify(autopsyFixture), { status: 200 });
+      }
+      return new Response(JSON.stringify([decisionRowFixture]), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchFn);
+    render(<AutopsySection rows={rows} />);
+    await waitFor(() =>
+      expect(document.querySelector("#aut-attrib")?.textContent).toContain(
+        "docs.example.com mattered",
+      ),
+    );
+    const before = calls.filter((c) =>
+      c.url.endsWith("/api/context-curator/autopsy"),
+    ).length;
+    window.dispatchEvent(
+      new CustomEvent("cc-autopsy", {
+        detail: { requestId: "rq-1", chunkId: "c1" },
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 300));
+    // no replay storm, and the proof stays on screen
+    expect(
+      calls.filter((c) => c.url.endsWith("/api/context-curator/autopsy")).length,
+    ).toBe(before);
+    expect(document.querySelector("#aut-attrib")?.textContent).toContain(
+      "docs.example.com mattered",
+    );
   });
 });
 

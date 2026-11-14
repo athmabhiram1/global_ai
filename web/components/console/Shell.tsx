@@ -126,11 +126,15 @@ function startTour() {
 
 function smoothTo(id: string) {
   const el = document.getElementById(id);
-  if (!el) return;
+  if (!el || typeof el.scrollIntoView !== "function") return;
   try {
     el.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch {
-    el.scrollIntoView();
+    try {
+      el.scrollIntoView();
+    } catch {
+      /* non-visual environment: nothing to scroll */
+    }
   }
   el.classList.remove("flash");
   void el.offsetWidth;
@@ -273,6 +277,19 @@ export default function Shell() {
     els.forEach((el) => io.observe(el));
     return () => io.disconnect();
   }, [scoped === null]);
+
+  // Cross-component navigation (drawer "Open autopsy →" hands off here).
+  useEffect(() => {
+    const onGo = (e: Event) => {
+      const p = (e as CustomEvent<string>).detail;
+      if (typeof p === "string" && NAV.some((s) => s.id === p)) {
+        go(p as Page);
+      }
+    };
+    window.addEventListener("cc-go", onGo);
+    return () => window.removeEventListener("cc-go", onGo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ⌘K / Esc
   useEffect(() => {

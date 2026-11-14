@@ -387,11 +387,9 @@ export function DecisionDrawerView({
                   detail: { requestId: detail.id, chunkId: firstKept },
                 }),
               );
-              requestAnimationFrame(() => {
-                document
-                  .getElementById("pv-autopsy")
-                  ?.scrollIntoView({ behavior: "smooth", block: "start" });
-              });
+              window.dispatchEvent(
+                new CustomEvent("cc-go", { detail: "autopsy" }),
+              );
             }}
           >
             Open autopsy →
@@ -573,11 +571,9 @@ export default function Drawer({
                       detail: { requestId, chunkId },
                     }),
                   );
-                  requestAnimationFrame(() => {
-                    document
-                      .getElementById("pv-autopsy")
-                      ?.scrollIntoView({ behavior: "smooth", block: "start" });
-                  });
+                  window.dispatchEvent(
+                    new CustomEvent("cc-go", { detail: "autopsy" }),
+                  );
                 }}
               />
               {ablate && (

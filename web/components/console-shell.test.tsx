@@ -245,6 +245,25 @@ describe("console shell template parity", () => {
   });
 });
 
+describe("console shell cc-go navigation", () => {
+  it("switches to the requested section on cc-go and ignores unknown pages", async () => {
+    stubApi();
+    render(<Shell />);
+    await waitFor(() => expect(screen.getAllByText("rq-1").length).toBeGreaterThan(0));
+    expect(document.querySelector("#pv-traces.on")).toBeTruthy();
+    fireEvent(
+      window,
+      new CustomEvent("cc-go", { detail: "not-a-page" }),
+    );
+    expect(document.querySelector("#pv-traces.on")).toBeTruthy();
+    fireEvent(window, new CustomEvent("cc-go", { detail: "autopsy" }));
+    await waitFor(() =>
+      expect(document.querySelector("#pv-autopsy.on")).toBeTruthy(),
+    );
+    expect(document.querySelector("#top-crumb")?.textContent).toBe("autopsy");
+  });
+});
+
 describe("console shell: evals + playground + demo badge", () => {
   beforeEach(() => {
     window.HTMLElement.prototype.scrollIntoView = vi.fn() as unknown as typeof window.HTMLElement.prototype.scrollIntoView;

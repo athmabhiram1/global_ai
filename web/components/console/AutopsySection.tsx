@@ -34,15 +34,23 @@ export default function AutopsySection({
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const ranRef = useRef("");
+  const [runNonce, setRunNonce] = useState(0);
   // Handoff from the decision drawer ("Open autopsy →"): the event may arrive
   // before, with, or instead of a decision change, so the wanted chunk waits
   // here until the detail for the requested decision loads.
   const pendingChunkRef = useRef<string | null>(null);
-  const liveRef = useRef({ decisionId: "", chunkIds: [] as string[] });
+  const liveRef = useRef({
+    decisionId: "",
+    chunkIds: [] as string[],
+    chunkId: "",
+    hasResult: false,
+  });
   useEffect(() => {
     liveRef.current = {
       decisionId,
       chunkIds: chunks.map((c) => c.id),
+      chunkId,
+      hasResult: result !== null,
     };
   });
 
@@ -104,11 +112,17 @@ export default function AutopsySection({
       const d = (e as CustomEvent<{ requestId?: string; chunkId?: string }>)
         .detail;
       if (!d?.requestId) return;
-      const { decisionId: curId, chunkIds } = liveRef.current;
-      if (d.requestId === curId && chunkIds.includes(d.chunkId ?? "")) {
+      const live = liveRef.current;
+      if (d.requestId === live.decisionId && live.chunkIds.includes(d.chunkId ?? "")) {
+        // Already showing exactly this proof: leave it on screen.
+        if (d.chunkId === live.chunkId && live.hasResult) return;
+        // Same decision, no visible result: force a replay instead of relying
+        // on a chunkId change that may already equal the current one.
+        ranRef.current = "";
         setResult(null);
         setError(null);
         setChunkId(d.chunkId as string);
+        setRunNonce((n) => n + 1);
         return;
       }
       pendingChunkRef.current = d.chunkId ?? null;
@@ -150,7 +164,7 @@ export default function AutopsySection({
     ranRef.current = key;
     void run(decisionId, chunkId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [decisionId, chunkId, running]);
+  }, [decisionId, chunkId, running, runNonce]);
 
   if (rows === null) return <p className="lede">Loading…</p>;
   if (rows.length === 0)
